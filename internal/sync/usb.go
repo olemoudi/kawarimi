@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -62,6 +63,11 @@ func (u *USBSync) Sync() error {
 		rel, err := filepath.Rel(u.VaultDir, path)
 		if err != nil {
 			return err
+		}
+
+		// Guard against path traversal
+		if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+			return fmt.Errorf("suspicious path in vault: %s", rel)
 		}
 
 		destPath := filepath.Join(u.USBPath, rel)

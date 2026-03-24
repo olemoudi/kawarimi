@@ -41,7 +41,7 @@ var checkinCmd = &cobra.Command{
 		// Write check-in timestamp to vault
 		now := time.Now().UTC()
 		checkinPath := filepath.Join(cfg.VaultDir, vault.LastCheckinFile)
-		if err := os.WriteFile(checkinPath, []byte(now.Format(time.RFC3339)+"\n"), 0644); err != nil {
+		if err := os.WriteFile(checkinPath, []byte(now.Format(time.RFC3339)+"\n"), 0600); err != nil {
 			return fmt.Errorf("writing check-in: %w", err)
 		}
 

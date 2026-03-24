@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const timerUnit = `[Unit]
@@ -19,13 +20,15 @@ WantedBy=timers.target
 
 // GenerateServiceUnit generates the systemd service unit content.
 func GenerateServiceUnit(kawarimiBinary string) string {
+	// Escape % for systemd (it uses % as a specifier prefix)
+	escaped := strings.ReplaceAll(kawarimiBinary, "%", "%%")
 	return fmt.Sprintf(`[Unit]
 Description=Kawarimi dead man's switch evaluation
 
 [Service]
 Type=oneshot
 ExecStart=%s switch evaluate
-`, kawarimiBinary)
+`, escaped)
 }
 
 // SystemdDir returns the path to the user's systemd directory.

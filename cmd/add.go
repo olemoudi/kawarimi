@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/olemoudi/kawarimi/internal/crypto"
+
 	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
 )
@@ -74,8 +76,8 @@ var addCredentialCmd = &cobra.Command{
 		}
 		cred.URL = promptLine(reader, "URL: ")
 		cred.Username = promptLine(reader, "Username: ")
-		cred.Password = promptLine(reader, "Password: ")
-		cred.TOTPSecret = promptLine(reader, "TOTP secret: ")
+		cred.Password, _ = crypto.PromptPassphrase("Password: ")
+		cred.TOTPSecret, _ = crypto.PromptPassphrase("TOTP secret: ")
 
 		codes := promptLine(reader, "Recovery codes (comma-separated): ")
 		if codes != "" {

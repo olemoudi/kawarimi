@@ -61,7 +61,7 @@ var switchSetupCmd = &cobra.Command{
 			switchCfg.SMTPPort = port
 		}
 		switchCfg.SMTPUsername = promptLine(reader, "SMTP username: ")
-		switchCfg.SMTPPassword = promptLine(reader, "SMTP password: ")
+		switchCfg.SMTPPassword, _ = crypto.PromptPassphrase("SMTP password: ")
 		switchCfg.SenderEmail = promptLine(reader, "Sender email address: ")
 		if switchCfg.SenderEmail == "" {
 			switchCfg.SenderEmail = switchCfg.SMTPUsername
