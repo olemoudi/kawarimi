@@ -97,3 +97,25 @@ func TestManifestCRUD(t *testing.T) {
 		t.Fatal("RemoveEntry should return nil for nonexistent")
 	}
 }
+
+func TestSanitizeExt(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{".pdf", ".pdf"},
+		{".PDF", ".PDF"},
+		{"pdf", ".pdf"},
+		{"", ""},
+		{"../../../etc/passwd", "......etcpasswd"},
+		{".jpg/../../", ".jpg...."},
+		{".tar.gz", ".tar.gz"},
+	}
+
+	for _, tt := range tests {
+		got := SanitizeExt(tt.input)
+		if got != tt.expected {
+			t.Errorf("SanitizeExt(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}

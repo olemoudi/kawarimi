@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/deadswitch"
+	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
 )
 
@@ -198,8 +200,7 @@ var switchDisableCmd = &cobra.Command{
 		// Remove switch files
 		files := []string{"switch-identity.key", "switch-payload.age", "switch-config.age"}
 		for _, f := range files {
-			path := fmt.Sprintf("%s/%s", appDir, f)
-			os.Remove(path)
+			os.Remove(filepath.Join(appDir, f))
 		}
 
 		// Try to disable systemd timer
@@ -246,14 +247,10 @@ func readLine(reader *bufio.Reader) string {
 }
 
 func openVaultWithPassphrase(vaultDir, passphrase string) (bool, error) {
-	_, err := deadswitch.ReadLastCheckin(vaultDir)
-	// If last_checkin doesn't exist yet that's fine — just verify the manifest decrypts
+	// Actually verify the passphrase by decrypting the manifest
+	_, err := vault.Open(vaultDir, passphrase)
 	if err != nil {
-		// Try to open the vault to verify passphrase
-		_, err := os.Stat(vaultDir)
-		if err != nil {
-			return false, err
-		}
+		return false, err
 	}
 	return true, nil
 }

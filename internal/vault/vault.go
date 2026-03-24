@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/olemoudi/kawarimi/internal/crypto"
 )
@@ -166,11 +167,21 @@ func (v *Vault) AddCredential(cred *Credential, tags []string) (*Entry, error) {
 // AddDocument encrypts a binary file and adds it to the vault.
 func (v *Vault) AddDocument(title string, originalName string, data []byte, tags []string) (*Entry, error) {
 	name := Slugify(title)
-	ext := filepath.Ext(originalName)
+	ext := filepath.Ext(filepath.Base(originalName)) // Base() strips directory components
 	seq := v.Manifest.NextSeq(CategoryDocuments)
 	filename := BuildFilename(CategoryDocuments, seq, name, ext)
 
 	filePath := filepath.Join(v.Dir, filename)
+	// Validate the resolved path stays within the vault directory
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("resolving path: %w", err)
+	}
+	absVault, _ := filepath.Abs(v.Dir)
+	if !strings.HasPrefix(absPath, absVault+string(filepath.Separator)) {
+		return nil, fmt.Errorf("path traversal detected: %s escapes vault", filename)
+	}
+
 	if err := crypto.EncryptFile(filePath, data, v.Passphrase); err != nil {
 		return nil, fmt.Errorf("encrypting document: %w", err)
 	}

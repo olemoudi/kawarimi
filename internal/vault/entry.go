@@ -69,7 +69,20 @@ func NowUTC() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
+// SanitizeExt ensures a file extension is safe (no path separators, no dots except the leading one).
+func SanitizeExt(ext string) string {
+	// Strip any path separators
+	ext = strings.ReplaceAll(ext, "/", "")
+	ext = strings.ReplaceAll(ext, "\\", "")
+	// Ensure it starts with a dot if non-empty
+	if ext != "" && !strings.HasPrefix(ext, ".") {
+		ext = "." + ext
+	}
+	return ext
+}
+
 // BuildFilename constructs the encrypted filename for a vault entry.
 func BuildFilename(category Category, seq int, name string, ext string) string {
+	ext = SanitizeExt(ext)
 	return fmt.Sprintf("%s/%03d-%s%s.age", category, seq, name, ext)
 }
