@@ -175,6 +175,36 @@ func (s Switch) View() string {
 		b.WriteString(label.Render("  Final release:") +
 			value.Render(fmt.Sprintf("%d days", s.switchCfg.FinalDays)) + "\n")
 
+		// Ping channels
+		b.WriteString("\n" + lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.Color("#06B6D4")).Render("Ping Channels:") + "\n")
+		if len(s.switchCfg.PingChannels) > 0 {
+			b.WriteString(label.Render("  Channels:") +
+				value.Render(strings.Join(s.switchCfg.PingChannels, ", ")) + "\n")
+		} else {
+			b.WriteString(label.Render("  Channels:") + value.Render("email (default)") + "\n")
+		}
+		if s.switchCfg.TelegramBotToken != "" {
+			b.WriteString(label.Render("  Telegram:") +
+				lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")).Render("configured") + "\n")
+		}
+		if s.switchCfg.IMAPServer != "" {
+			b.WriteString(label.Render("  Email reply:") +
+				lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")).Render("configured ("+s.switchCfg.IMAPServer+")") + "\n")
+		}
+
+		// Mnemonic delivery
+		b.WriteString("\n" + lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.Color("#06B6D4")).Render("Delivery:") + "\n")
+		mnemonicMode := s.switchCfg.MnemonicDelivery
+		if mnemonicMode == "" {
+			mnemonicMode = "email"
+		}
+		b.WriteString(label.Render("  Mnemonic via:") + value.Render(mnemonicMode) + "\n")
+		if s.switchCfg.DeliveryInstructions != "" {
+			b.WriteString(label.Render("  Vault delivery:") + value.Render("custom instructions") + "\n")
+		}
+
 		// Recipients
 		b.WriteString("\n" + lipgloss.NewStyle().Bold(true).
 			Foreground(lipgloss.Color("#06B6D4")).Render("Recipients:") + "\n")

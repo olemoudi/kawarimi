@@ -96,13 +96,87 @@ var switchSetupCmd = &cobra.Command{
 			switchCfg.FinalDays, _ = strconv.Atoi(v)
 		}
 
+		// Telegram configuration
 		fmt.Println()
-		fmt.Println("-- Physical Mnemonic/Passphrase Location --")
-		fmt.Println("Where is the physical mnemonic/passphrase backup stored?")
-		fmt.Println("(This text will be included in the GitHub Actions notification email)")
-		switchCfg.PassphraseLocation = promptLine(reader, "Location: ")
+		fmt.Println("-- Telegram Bot (optional) --")
+		fmt.Println("A Telegram bot can ping you and accept /alive replies.")
+		switchCfg.TelegramBotToken = promptLine(reader, "Telegram bot token (leave empty to skip): ")
+		if switchCfg.TelegramBotToken != "" {
+			fmt.Println("Send any message to your bot, then press Enter...")
+			readLine(reader)
+			chatID, err := deadswitch.ResolveChatID(switchCfg.TelegramBotToken)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve chat ID: %v\n", err)
+				switchCfg.TelegramChatID = promptLine(reader, "Enter chat ID manually: ")
+			} else {
+				fmt.Printf("Detected chat ID: %s\n", chatID)
+				switchCfg.TelegramChatID = chatID
+			}
+			// Send test message
+			if err := deadswitch.SendTelegramMessage(switchCfg.TelegramBotToken, switchCfg.TelegramChatID, "Kawarimi bot connected. Reply /alive to check in."); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: test message failed: %v\n", err)
+			} else {
+				fmt.Println("Test message sent!")
+			}
+		}
 
-		switchCfg.VaultRepoURL = promptLine(reader, "Vault git repo URL (for notification emails): ")
+		// Ping channels
+		fmt.Println()
+		fmt.Println("-- Ping Channels --")
+		fmt.Println("Which channels should be used to ping you?")
+		channelStr := promptLine(reader, "Channels (comma-separated, options: email,telegram) [email]: ")
+		if channelStr == "" {
+			switchCfg.PingChannels = []string{"email"}
+		} else {
+			for _, c := range strings.Split(channelStr, ",") {
+				c = strings.TrimSpace(strings.ToLower(c))
+				if c == "email" || c == "telegram" {
+					switchCfg.PingChannels = append(switchCfg.PingChannels, c)
+				}
+			}
+		}
+
+		// IMAP configuration
+		fmt.Println()
+		fmt.Println("-- Email Reply Check-in (optional) --")
+		fmt.Println("If configured, you can check in by replying to ping emails with 'ALIVE'.")
+		switchCfg.IMAPServer = promptLine(reader, "IMAP server (e.g., imap.gmail.com, leave empty to skip): ")
+		if switchCfg.IMAPServer != "" {
+			imapPortStr := promptLine(reader, "IMAP port (default: 993): ")
+			if imapPortStr != "" {
+				switchCfg.IMAPPort, _ = strconv.Atoi(imapPortStr)
+			} else {
+				switchCfg.IMAPPort = 993
+			}
+		}
+
+		// Delivery instructions
+		fmt.Println()
+		fmt.Println("-- Vault Delivery Instructions --")
+		fmt.Println("How will the receiver get the vault files?")
+		switchCfg.VaultRepoURL = promptLine(reader, "Vault git repo URL (if applicable): ")
+		fmt.Println("Custom delivery instructions (free text, e.g., 'Contact John at 555-1234")
+		fmt.Println("who has a USB copy' or 'Download from https://...')")
+		switchCfg.DeliveryInstructions = promptLine(reader, "Instructions (leave empty for default): ")
+
+		// Mnemonic delivery mode
+		fmt.Println()
+		fmt.Println("-- Mnemonic Delivery --")
+		fmt.Println("How should the 8 mnemonic words be delivered to the receiver?")
+		fmt.Println("  1) email    - Include words directly in the notification email")
+		fmt.Println("  2) physical - Reference a physical location (sealed envelope, safe)")
+		modeStr := promptLine(reader, "Mode [physical]: ")
+		if strings.HasPrefix(strings.ToLower(modeStr), "e") || modeStr == "1" {
+			switchCfg.MnemonicDelivery = "email"
+		} else {
+			switchCfg.MnemonicDelivery = "physical"
+		}
+
+		// Physical location (needed for both modes as fallback reference)
+		fmt.Println()
+		fmt.Println("-- Physical Mnemonic Location --")
+		fmt.Println("Where is the physical mnemonic backup stored?")
+		switchCfg.PassphraseLocation = promptLine(reader, "Location (e.g., 'sealed envelope in home safe'): ")
 
 		// Store the switch payload (mnemonic for v2, passphrase for v1)
 		fmt.Println()
@@ -165,6 +239,9 @@ var switchSetupCmd = &cobra.Command{
 		fmt.Println("  SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD")
 		fmt.Println("  USER_EMAIL, RECIPIENT_EMAILS")
 		fmt.Println("  PHYSICAL_PASSPHRASE_LOCATION")
+		if switchCfg.TelegramBotToken != "" {
+			fmt.Println("  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
+		}
 
 		// Install systemd timer
 		fmt.Println()

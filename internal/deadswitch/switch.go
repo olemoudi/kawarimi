@@ -37,6 +37,18 @@ type SwitchConfig struct {
 	PassphraseLocation string `json:"passphrase_location"`
 	// Vault repo URL (for notification emails)
 	VaultRepoURL string `json:"vault_repo_url"`
+	// Telegram bot configuration
+	TelegramBotToken string `json:"telegram_bot_token,omitempty"`
+	TelegramChatID   string `json:"telegram_chat_id,omitempty"`
+	// Ping channels: "email", "telegram"
+	PingChannels []string `json:"ping_channels,omitempty"`
+	// Mnemonic delivery mode: "email" (include words in email) or "physical" (reference location only)
+	MnemonicDelivery string `json:"mnemonic_delivery,omitempty"`
+	// Custom delivery instructions for how receiver gets the vault files
+	DeliveryInstructions string `json:"delivery_instructions,omitempty"`
+	// IMAP configuration for email reply check-in
+	IMAPServer string `json:"imap_server,omitempty"`
+	IMAPPort   int    `json:"imap_port,omitempty"`
 }
 
 // DefaultSwitchConfig returns a config with default escalation thresholds.
@@ -87,17 +99,58 @@ func EvaluateStage(daysSince int, cfg *SwitchConfig) Stage {
 	}
 }
 
+// hasPingChannel checks if a channel is configured for pinging.
+func hasPingChannel(cfg *SwitchConfig, channel string) bool {
+	// If no channels configured, default to email
+	if len(cfg.PingChannels) == 0 {
+		return channel == "email"
+	}
+	for _, c := range cfg.PingChannels {
+		if c == channel {
+			return true
+		}
+	}
+	return false
+}
+
 // Evaluate runs the full switch evaluation: read check-in, determine stage, act.
 func Evaluate(vaultDir string, switchCfg *SwitchConfig, appDir string) error {
-	daysSince, err := DaysSinceCheckin(vaultDir)
-	if err != nil {
-		return fmt.Errorf("evaluating switch: %w", err)
-	}
-
 	// Check if already triggered
 	triggeredPath := filepath.Join(appDir, "switch-triggered")
 	if _, err := os.Stat(triggeredPath); err == nil {
 		return nil // Already triggered, don't send again
+	}
+
+	// Check Telegram for /alive replies before evaluating
+	if switchCfg.TelegramBotToken != "" && switchCfg.TelegramChatID != "" {
+		lastCheckin, err := ReadLastCheckin(vaultDir)
+		if err == nil {
+			alive, err := CheckForAlive(switchCfg.TelegramBotToken, switchCfg.TelegramChatID, lastCheckin)
+			if err == nil && alive {
+				// Auto check-in from Telegram
+				now := time.Now().UTC().Format(time.RFC3339)
+				checkinPath := filepath.Join(vaultDir, "last_checkin")
+				os.WriteFile(checkinPath, []byte(now), 0600)
+			}
+		}
+	}
+
+	// Check IMAP for email replies
+	if switchCfg.IMAPServer != "" {
+		lastCheckin, err := ReadLastCheckin(vaultDir)
+		if err == nil {
+			alive, err := CheckIMAPForAlive(switchCfg, lastCheckin)
+			if err == nil && alive {
+				now := time.Now().UTC().Format(time.RFC3339)
+				checkinPath := filepath.Join(vaultDir, "last_checkin")
+				os.WriteFile(checkinPath, []byte(now), 0600)
+			}
+		}
+	}
+
+	daysSince, err := DaysSinceCheckin(vaultDir)
+	if err != nil {
+		return fmt.Errorf("evaluating switch: %w", err)
 	}
 
 	stage := EvaluateStage(daysSince, switchCfg)
@@ -107,26 +160,52 @@ func Evaluate(vaultDir string, switchCfg *SwitchConfig, appDir string) error {
 		return nil
 
 	case StageWarning1:
-		return SendEmail(switchCfg, []string{switchCfg.UserEmail},
-			"Kawarimi: Missed check-in",
-			fmt.Sprintf("You haven't checked in for %d days.\n\nRun 'kawarimi checkin' to reset the timer.\n\nIf you don't check in by day %d, your family will be notified.",
-				daysSince, switchCfg.FinalDays))
+		return sendPing(switchCfg, daysSince, false)
 
 	case StageWarning2:
-		return SendEmail(switchCfg, []string{switchCfg.UserEmail},
-			"URGENT: Kawarimi check-in overdue",
-			fmt.Sprintf("You haven't checked in for %d days.\n\nRun 'kawarimi checkin' IMMEDIATELY to prevent passphrase release.\n\nThe passphrase will be sent to your designated recipients on day %d.",
-				daysSince, switchCfg.FinalDays))
+		return sendPing(switchCfg, daysSince, true)
 
 	case StageFinal:
 		if err := triggerFinalRelease(switchCfg, appDir); err != nil {
 			return err
 		}
-		// Mark as triggered
 		return os.WriteFile(triggeredPath, []byte(time.Now().UTC().Format(time.RFC3339)), 0600)
 	}
 
 	return nil
+}
+
+// sendPing sends check-in reminders on all configured channels.
+func sendPing(cfg *SwitchConfig, daysSince int, urgent bool) error {
+	var firstErr error
+
+	if hasPingChannel(cfg, "email") {
+		subject := "Kawarimi: Missed check-in"
+		body := fmt.Sprintf("You haven't checked in for %d days.\n\nRun 'kawarimi checkin' to reset the timer.\n\nIf you don't check in by day %d, your family will be notified.",
+			daysSince, cfg.FinalDays)
+		if urgent {
+			subject = "URGENT: Kawarimi check-in overdue"
+			body = fmt.Sprintf("You haven't checked in for %d days.\n\nRun 'kawarimi checkin' IMMEDIATELY to prevent vault release.\n\nThe vault will be released to your designated recipients on day %d.\n\nYou can also reply to this email with subject 'ALIVE' to check in.",
+				daysSince, cfg.FinalDays)
+		}
+		if err := SendEmail(cfg, []string{cfg.UserEmail}, subject, body); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("email ping: %w", err)
+		}
+	}
+
+	if hasPingChannel(cfg, "telegram") && cfg.TelegramBotToken != "" {
+		var err error
+		if urgent {
+			err = SendTelegramWarning(cfg, daysSince)
+		} else {
+			err = SendTelegramPing(cfg, daysSince)
+		}
+		if err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("telegram ping: %w", err)
+		}
+	}
+
+	return firstErr
 }
 
 func triggerFinalRelease(switchCfg *SwitchConfig, appDir string) error {
@@ -180,13 +259,39 @@ beyond the intended recipients.
 }
 
 func triggerFinalReleaseV2(switchCfg *SwitchConfig, payload string) error {
-	// Payload format: "MNEMONIC:word1 word2 word3 word4 word5 word6 word7 word8"
 	mnemonicStr := strings.TrimPrefix(payload, "MNEMONIC:")
 	words := strings.Fields(mnemonicStr)
 
-	var wordList string
-	for i, w := range words {
-		wordList += fmt.Sprintf("   %d. %s\n", i+1, w)
+	// Delivery instructions
+	deliverySection := "1. Locate the vault:\n"
+	if switchCfg.DeliveryInstructions != "" {
+		deliverySection += "   " + strings.ReplaceAll(switchCfg.DeliveryInstructions, "\n", "\n   ")
+	} else if switchCfg.VaultRepoURL != "" {
+		deliverySection += fmt.Sprintf("   Git repository: %s\n   Run: git clone %s", switchCfg.VaultRepoURL, switchCfg.VaultRepoURL)
+	} else {
+		deliverySection += "   Check with family for the vault location (USB drive, shared folder, etc.)"
+	}
+
+	// Mnemonic section
+	var mnemonicSection string
+	if switchCfg.MnemonicDelivery == "physical" {
+		location := switchCfg.PassphraseLocation
+		if location == "" {
+			location = "a sealed envelope/card provided by the vault owner"
+		}
+		mnemonicSection = fmt.Sprintf(`3. Find the 8 mnemonic words at:
+   %s
+   Enter the words when prompted.`, location)
+	} else {
+		var wordList string
+		for i, w := range words {
+			wordList += fmt.Sprintf("   %d. %s\n", i+1, w)
+		}
+		mnemonicSection = fmt.Sprintf(`3. When prompted, enter these 8 mnemonic words:
+
+%s
+   If you also have a physical card/envelope with mnemonic words,
+   use those instead (more secure).`, wordList)
 	}
 
 	subject := "Important: Access Information Vault"
@@ -194,30 +299,23 @@ func triggerFinalReleaseV2(switchCfg *SwitchConfig, payload string) error {
 
 The vault owner has not checked in for an extended period.
 
-To access the encrypted information:
+HOW TO ACCESS THE VAULT:
 
-1. Locate the vault in one of these places:
-   - Git repository: %s
-   - USB drive (check with family for location)
+%s
 
 2. In the vault directory, find the kawarimi program for your
    computer (kawarimi-linux, kawarimi-macos, or kawarimi-windows.exe).
 
-3. Open a terminal/command prompt and run:
-
+   Open a terminal/command prompt and run:
    ./kawarimi export --mnemonic ./decrypted/
 
-4. When prompted, enter these 8 mnemonic words:
-
 %s
-5. Your decrypted files will be in the ./decrypted/ directory.
 
-If you also have a physical card/envelope with mnemonic words,
-use those instead of the words in this email (more secure).
+4. Your decrypted files will be in the ./decrypted/ directory.
 
-IMPORTANT: Store these words securely. Do not share them
+IMPORTANT: Store the mnemonic words securely. Do not share them
 beyond the intended recipients.
-`, switchCfg.VaultRepoURL, wordList)
+`, deliverySection, mnemonicSection)
 
 	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
 }
