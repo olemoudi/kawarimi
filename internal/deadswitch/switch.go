@@ -130,12 +130,22 @@ func Evaluate(vaultDir string, switchCfg *SwitchConfig, appDir string) error {
 }
 
 func triggerFinalRelease(switchCfg *SwitchConfig, appDir string) error {
-	// Read the stored passphrase from switch-payload.age
-	passphrase, err := DecryptSwitchPayload(appDir)
+	// Read the stored payload from switch-payload.age
+	payload, err := DecryptSwitchPayload(appDir)
 	if err != nil {
 		return fmt.Errorf("decrypting switch payload: %w", err)
 	}
 
+	// Detect if this is a v2 mnemonic payload (starts with "MNEMONIC:")
+	if strings.HasPrefix(payload, "MNEMONIC:") {
+		return triggerFinalReleaseV2(switchCfg, payload)
+	}
+
+	// V1: payload is a passphrase
+	return triggerFinalReleaseV1(switchCfg, payload)
+}
+
+func triggerFinalReleaseV1(switchCfg *SwitchConfig, passphrase string) error {
 	subject := "Important: Access Information Vault"
 	body := fmt.Sprintf(`This is an automated message from the Kawarimi information vault.
 
@@ -169,6 +179,49 @@ beyond the intended recipients.
 	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
 }
 
+func triggerFinalReleaseV2(switchCfg *SwitchConfig, payload string) error {
+	// Payload format: "MNEMONIC:word1 word2 word3 word4 word5 word6 word7 word8"
+	mnemonicStr := strings.TrimPrefix(payload, "MNEMONIC:")
+	words := strings.Fields(mnemonicStr)
+
+	var wordList string
+	for i, w := range words {
+		wordList += fmt.Sprintf("   %d. %s\n", i+1, w)
+	}
+
+	subject := "Important: Access Information Vault"
+	body := fmt.Sprintf(`This is an automated message from the Kawarimi information vault.
+
+The vault owner has not checked in for an extended period.
+
+To access the encrypted information:
+
+1. Locate the vault in one of these places:
+   - Git repository: %s
+   - USB drive (check with family for location)
+
+2. In the vault directory, find the kawarimi program for your
+   computer (kawarimi-linux, kawarimi-macos, or kawarimi-windows.exe).
+
+3. Open a terminal/command prompt and run:
+
+   ./kawarimi export --mnemonic ./decrypted/
+
+4. When prompted, enter these 8 mnemonic words:
+
+%s
+5. Your decrypted files will be in the ./decrypted/ directory.
+
+If you also have a physical card/envelope with mnemonic words,
+use those instead of the words in this email (more secure).
+
+IMPORTANT: Store these words securely. Do not share them
+beyond the intended recipients.
+`, switchCfg.VaultRepoURL, wordList)
+
+	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
+}
+
 // DecryptSwitchPayload reads the vault passphrase from the switch payload.
 func DecryptSwitchPayload(appDir string) (string, error) {
 	identityPath := filepath.Join(appDir, "switch-identity.key")
@@ -185,6 +238,12 @@ func DecryptSwitchPayload(appDir string) (string, error) {
 	}
 
 	return decryptWithX25519(payload, strings.TrimSpace(string(identity)))
+}
+
+// StoreSwitchMnemonic encrypts and stores mnemonic words for the switch (v2).
+func StoreSwitchMnemonic(appDir string, words []string) error {
+	payload := "MNEMONIC:" + strings.Join(words, " ")
+	return StoreSwitchPayload(appDir, payload)
 }
 
 // StoreSwitchPayload encrypts and stores the vault passphrase for the switch.

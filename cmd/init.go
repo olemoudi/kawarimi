@@ -36,29 +36,95 @@ var initCmd = &cobra.Command{
 				cfg.VaultDir, filepath.Join(home, config.AppDir), config.ConfigFile)
 		}
 
-		passphrase, err := crypto.PromptPassphraseConfirm()
+		// Get hostname for device ID
+		hostname, err := os.Hostname()
+		if err != nil {
+			hostname = "default"
+		}
+
+		fmt.Println("Set a password for daily vault access.")
+		password, err := crypto.PromptPassphraseConfirm()
 		if err != nil {
 			return err
 		}
 
-		v, err := vault.Create(vaultDir, passphrase)
+		// Create header with all slots
+		result, err := vault.NewHeader(vault.InitParams{
+			Password: password,
+			DeviceID: hostname,
+		})
+		if err != nil {
+			return fmt.Errorf("creating vault header: %w", err)
+		}
+		defer crypto.ZeroBytes(result.MasterKey)
+
+		// Save header to vault dir (create dir first)
+		if err := os.MkdirAll(vaultDir, 0700); err != nil {
+			return fmt.Errorf("creating vault directory: %w", err)
+		}
+		if err := vault.SaveHeader(vaultDir, result.Header); err != nil {
+			return fmt.Errorf("saving vault header: %w", err)
+		}
+
+		// Create vault with identity-based encryption
+		v, err := vault.CreateV2(vaultDir, result.AgeIdentity, result.Header.AgeRecipient)
+		if err != nil {
+			return fmt.Errorf("creating vault: %w", err)
+		}
+
+		// Save encrypted device key
+		appDir, err := config.AppDirPath()
 		if err != nil {
 			return err
 		}
+		if err := os.MkdirAll(appDir, 0700); err != nil {
+			return fmt.Errorf("creating app directory: %w", err)
+		}
 
+		dkf, err := crypto.EncryptDeviceKey(result.DeviceKey, password)
+		if err != nil {
+			return fmt.Errorf("encrypting device key: %w", err)
+		}
+		deviceKeyPath := filepath.Join(appDir, "device.key")
+		if err := crypto.SaveDeviceKeyFile(deviceKeyPath, dkf); err != nil {
+			return fmt.Errorf("saving device key: %w", err)
+		}
+
+		// Save config
 		cfg := config.DefaultConfig(v.Dir)
 		if err := config.Save(cfg); err != nil {
 			return fmt.Errorf("saving config: %w", err)
 		}
 
+		// Display critical secrets
+		fmt.Println()
+		fmt.Println("========================================")
+		fmt.Println("  WRITE THESE DOWN AND STORE SAFELY")
+		fmt.Println("  They will NOT be shown again!")
+		fmt.Println("========================================")
+		fmt.Println()
+		fmt.Println("MNEMONIC WORDS (for your family/receiver):")
+		for i, w := range result.MnemonicWords {
+			fmt.Printf("  %d. %s\n", i+1, w)
+		}
+		fmt.Println()
+		fmt.Println("RECOVERY CODE (to regain access if you lose this device):")
+		fmt.Printf("  %s\n", crypto.FormatRecoveryCode(result.RecoveryCode))
+		fmt.Println()
+		fmt.Println("========================================")
+		fmt.Println()
 		fmt.Printf("Vault initialized at %s\n", v.Dir)
+		fmt.Printf("Device key saved to %s\n", deviceKeyPath)
 		fmt.Printf("Config saved to ~/%s/%s\n", config.AppDir, config.ConfigFile)
-		fmt.Println("\nNext steps:")
+		fmt.Println()
+		fmt.Println("Next steps:")
 		fmt.Println("  kawarimi add note \"Bank Accounts\"    — add a text note")
 		fmt.Println("  kawarimi add credential               — add login credentials")
 		fmt.Println("  kawarimi add document invoice.pdf      — add a document")
-		fmt.Println("\nIMPORTANT: Write down your passphrase and store it in a safe place.")
-		fmt.Println("Your family will need it to decrypt the vault.")
+
+		// Zero sensitive data
+		crypto.ZeroBytes(result.DeviceKey)
+		crypto.ZeroBytes(result.RecoveryCode)
 
 		return nil
 	},

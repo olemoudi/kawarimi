@@ -3,6 +3,7 @@ package vault
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/olemoudi/kawarimi/internal/crypto"
 )
@@ -90,7 +91,7 @@ func UnmarshalManifest(data []byte) (*Manifest, error) {
 	return &m, nil
 }
 
-// SaveManifest encrypts and writes the manifest to the vault.
+// SaveManifest encrypts and writes the manifest to the vault using passphrase (v1).
 func SaveManifest(path string, m *Manifest, passphrase string) error {
 	data, err := m.Marshal()
 	if err != nil {
@@ -99,11 +100,37 @@ func SaveManifest(path string, m *Manifest, passphrase string) error {
 	return crypto.EncryptFile(path, data, passphrase)
 }
 
-// LoadManifest reads and decrypts the manifest from the vault.
+// LoadManifest reads and decrypts the manifest from the vault using passphrase (v1).
 func LoadManifest(path string, passphrase string) (*Manifest, error) {
 	data, err := crypto.DecryptFile(path, passphrase)
 	if err != nil {
 		return nil, fmt.Errorf("loading manifest: %w", err)
+	}
+	return UnmarshalManifest(data)
+}
+
+// SaveManifestV2 encrypts and writes the manifest using an age X25519 recipient.
+func SaveManifestV2(path string, m *Manifest, ageRecipient string) error {
+	data, err := m.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshaling manifest: %w", err)
+	}
+	ciphertext, err := EncryptWithIdentity(data, ageRecipient)
+	if err != nil {
+		return fmt.Errorf("encrypting manifest: %w", err)
+	}
+	return os.WriteFile(path, ciphertext, 0600)
+}
+
+// LoadManifestV2 reads and decrypts the manifest using an age X25519 identity.
+func LoadManifestV2(path string, ageIdentity string) (*Manifest, error) {
+	ciphertext, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading manifest: %w", err)
+	}
+	data, err := DecryptWithIdentity(ciphertext, ageIdentity)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting manifest: %w", err)
 	}
 	return UnmarshalManifest(data)
 }

@@ -97,30 +97,57 @@ var switchSetupCmd = &cobra.Command{
 		}
 
 		fmt.Println()
-		fmt.Println("-- Physical Passphrase Location --")
-		fmt.Println("Where is the physical passphrase backup stored?")
+		fmt.Println("-- Physical Mnemonic/Passphrase Location --")
+		fmt.Println("Where is the physical mnemonic/passphrase backup stored?")
 		fmt.Println("(This text will be included in the GitHub Actions notification email)")
 		switchCfg.PassphraseLocation = promptLine(reader, "Location: ")
 
 		switchCfg.VaultRepoURL = promptLine(reader, "Vault git repo URL (for notification emails): ")
 
-		// Store the vault passphrase for the systemd switch
+		// Store the switch payload (mnemonic for v2, passphrase for v1)
 		fmt.Println()
-		fmt.Println("The vault passphrase is needed to set up the local (systemd) switch.")
-		passphrase, err := crypto.PromptPassphrase("Enter vault passphrase: ")
-		if err != nil {
-			return err
-		}
+		if vault.IsV2Vault(cfg.VaultDir) {
+			fmt.Println("Enter the 8 mnemonic words to store in the switch payload.")
+			fmt.Println("These will be sent to recipients if the switch triggers.")
+			fmt.Fprint(os.Stdout, "Enter 8 mnemonic words (space-separated): ")
+			var words []string
+			for i := 0; i < 8; i++ {
+				var w string
+				if _, err := fmt.Scan(&w); err != nil {
+					return fmt.Errorf("reading mnemonic word %d: %w", i+1, err)
+				}
+				words = append(words, w)
+			}
 
-		// Verify passphrase works by opening the vault
-		_, err = openVaultWithPassphrase(cfg.VaultDir, passphrase)
-		if err != nil {
-			return fmt.Errorf("invalid passphrase: %w", err)
-		}
+			// Verify mnemonic works
+			header, err := vault.LoadHeader(cfg.VaultDir)
+			if err != nil {
+				return fmt.Errorf("loading vault header: %w", err)
+			}
+			mk, _, err := header.OpenWithMnemonic(words)
+			if err != nil {
+				return fmt.Errorf("invalid mnemonic: %w", err)
+			}
+			crypto.ZeroBytes(mk)
 
-		// Store switch payload and config
-		if err := deadswitch.StoreSwitchPayload(appDir, passphrase); err != nil {
-			return err
+			if err := deadswitch.StoreSwitchMnemonic(appDir, words); err != nil {
+				return err
+			}
+		} else {
+			fmt.Println("The vault passphrase is needed to set up the local (systemd) switch.")
+			passphrase, err := crypto.PromptPassphrase("Enter vault passphrase: ")
+			if err != nil {
+				return err
+			}
+
+			_, err = openVaultWithPassphrase(cfg.VaultDir, passphrase)
+			if err != nil {
+				return fmt.Errorf("invalid passphrase: %w", err)
+			}
+
+			if err := deadswitch.StoreSwitchPayload(appDir, passphrase); err != nil {
+				return err
+			}
 		}
 		if err := deadswitch.SaveSwitchConfig(appDir, switchCfg); err != nil {
 			return err

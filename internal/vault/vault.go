@@ -18,12 +18,21 @@ const (
 
 // Vault represents an open vault on disk.
 type Vault struct {
-	Dir        string
+	Dir          string
+	AgeIdentity  string // V2: X25519 identity for decryption
+	AgeRecipient string // V2: X25519 recipient for encryption
+	Manifest     *Manifest
+	// Deprecated: only used for v1 vault compatibility and migration
 	Passphrase string
-	Manifest   *Manifest
 }
 
-// Create initializes a new vault at the given directory.
+// isV2 returns true if this vault uses the new identity-based encryption.
+func (v *Vault) isV2() bool {
+	return v.AgeIdentity != "" && v.AgeRecipient != ""
+}
+
+// Create initializes a new v1 vault at the given directory.
+// Deprecated: use CreateV2 for new vaults.
 func Create(dir string, passphrase string) (*Vault, error) {
 	if _, err := os.Stat(dir); err == nil {
 		entries, _ := os.ReadDir(dir)
@@ -34,23 +43,12 @@ func Create(dir string, passphrase string) (*Vault, error) {
 		}
 	}
 
-	dirs := []string{
-		dir,
-		filepath.Join(dir, string(CategoryNotes)),
-		filepath.Join(dir, string(CategoryCredentials)),
-		filepath.Join(dir, string(CategoryDocuments)),
-	}
-	for _, d := range dirs {
-		if err := os.MkdirAll(d, 0700); err != nil {
-			return nil, fmt.Errorf("creating directory %s: %w", d, err)
-		}
+	if err := createVaultDirs(dir); err != nil {
+		return nil, err
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, ReadmeFile), []byte(readmeContent), 0644); err != nil {
-		return nil, fmt.Errorf("writing README: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, DecryptInstructionsFile), []byte(decryptInstructionsContent), 0644); err != nil {
-		return nil, fmt.Errorf("writing decrypt instructions: %w", err)
+	if err := writeVaultReadme(dir); err != nil {
+		return nil, err
 	}
 
 	manifest := NewManifest()
@@ -66,7 +64,8 @@ func Create(dir string, passphrase string) (*Vault, error) {
 	}, nil
 }
 
-// Open loads an existing vault from the given directory.
+// Open loads an existing v1 vault from the given directory.
+// Deprecated: use OpenV2 for v2 vaults.
 func Open(dir string, passphrase string) (*Vault, error) {
 	manifestPath := filepath.Join(dir, ManifestFile)
 	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
@@ -85,9 +84,101 @@ func Open(dir string, passphrase string) (*Vault, error) {
 	}, nil
 }
 
+// CreateV2 initializes a new v2 vault with identity-based encryption.
+// The vault header should already be written to disk before calling this.
+func CreateV2(dir string, ageIdentity, ageRecipient string) (*Vault, error) {
+	if _, err := os.Stat(dir); err == nil {
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if e.Name() == ManifestFile {
+				return nil, fmt.Errorf("vault already exists at %s", dir)
+			}
+		}
+	}
+
+	if err := createVaultDirs(dir); err != nil {
+		return nil, err
+	}
+
+	if err := writeVaultReadme(dir); err != nil {
+		return nil, err
+	}
+
+	manifest := NewManifest()
+	manifestPath := filepath.Join(dir, ManifestFile)
+	if err := SaveManifestV2(manifestPath, manifest, ageRecipient); err != nil {
+		return nil, fmt.Errorf("saving initial manifest: %w", err)
+	}
+
+	return &Vault{
+		Dir:          dir,
+		AgeIdentity:  ageIdentity,
+		AgeRecipient: ageRecipient,
+		Manifest:     manifest,
+	}, nil
+}
+
+// OpenV2 loads an existing v2 vault using an age identity.
+func OpenV2(dir string, ageIdentity, ageRecipient string) (*Vault, error) {
+	manifestPath := filepath.Join(dir, ManifestFile)
+	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("no vault found at %s (missing %s)", dir, ManifestFile)
+	}
+
+	manifest, err := LoadManifestV2(manifestPath, ageIdentity)
+	if err != nil {
+		return nil, fmt.Errorf("opening vault: %w", err)
+	}
+
+	return &Vault{
+		Dir:          dir,
+		AgeIdentity:  ageIdentity,
+		AgeRecipient: ageRecipient,
+		Manifest:     manifest,
+	}, nil
+}
+
 // SaveManifestToDisk writes the current manifest to the vault directory.
 func (v *Vault) SaveManifestToDisk() error {
-	return SaveManifest(filepath.Join(v.Dir, ManifestFile), v.Manifest, v.Passphrase)
+	path := filepath.Join(v.Dir, ManifestFile)
+	if v.isV2() {
+		return SaveManifestV2(path, v.Manifest, v.AgeRecipient)
+	}
+	return SaveManifest(path, v.Manifest, v.Passphrase)
+}
+
+// encryptData encrypts data using the vault's encryption method.
+func (v *Vault) encryptData(plaintext []byte) ([]byte, error) {
+	if v.isV2() {
+		return EncryptWithIdentity(plaintext, v.AgeRecipient)
+	}
+	return crypto.Encrypt(plaintext, v.Passphrase)
+}
+
+// decryptData decrypts data using the vault's decryption method.
+func (v *Vault) decryptData(ciphertext []byte) ([]byte, error) {
+	if v.isV2() {
+		return DecryptWithIdentity(ciphertext, v.AgeIdentity)
+	}
+	return crypto.Decrypt(ciphertext, v.Passphrase)
+}
+
+// encryptFile encrypts data and writes it to disk.
+func (v *Vault) encryptFile(path string, plaintext []byte) error {
+	ciphertext, err := v.encryptData(plaintext)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, ciphertext, 0600)
+}
+
+// decryptFile reads and decrypts a file.
+func (v *Vault) decryptFile(path string) ([]byte, error) {
+	ciphertext, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading file %s: %w", path, err)
+	}
+	return v.decryptData(ciphertext)
 }
 
 // AddNote encrypts a markdown note and adds it to the vault.
@@ -97,7 +188,7 @@ func (v *Vault) AddNote(title string, content []byte, tags []string) (*Entry, er
 	filename := BuildFilename(CategoryNotes, seq, name, ".md")
 
 	filePath := filepath.Join(v.Dir, filename)
-	if err := crypto.EncryptFile(filePath, content, v.Passphrase); err != nil {
+	if err := v.encryptFile(filePath, content); err != nil {
 		return nil, fmt.Errorf("encrypting note: %w", err)
 	}
 
@@ -134,7 +225,7 @@ func (v *Vault) AddCredential(cred *Credential, tags []string) (*Entry, error) {
 	}
 
 	filePath := filepath.Join(v.Dir, filename)
-	if err := crypto.EncryptFile(filePath, data, v.Passphrase); err != nil {
+	if err := v.encryptFile(filePath, data); err != nil {
 		return nil, fmt.Errorf("encrypting credential: %w", err)
 	}
 
@@ -182,7 +273,7 @@ func (v *Vault) AddDocument(title string, originalName string, data []byte, tags
 		return nil, fmt.Errorf("path traversal detected: %s escapes vault", filename)
 	}
 
-	if err := crypto.EncryptFile(filePath, data, v.Passphrase); err != nil {
+	if err := v.encryptFile(filePath, data); err != nil {
 		return nil, fmt.Errorf("encrypting document: %w", err)
 	}
 
@@ -210,13 +301,13 @@ func (v *Vault) AddDocument(title string, originalName string, data []byte, tags
 // ShowEntry decrypts and returns the content of a vault entry.
 func (v *Vault) ShowEntry(entry *Entry) ([]byte, error) {
 	filePath := filepath.Join(v.Dir, entry.Filename)
-	return crypto.DecryptFile(filePath, v.Passphrase)
+	return v.decryptFile(filePath)
 }
 
 // UpdateEntry re-encrypts an entry with new content and updates the manifest timestamp.
 func (v *Vault) UpdateEntry(entry *Entry, newContent []byte) error {
 	filePath := filepath.Join(v.Dir, entry.Filename)
-	if err := crypto.EncryptFile(filePath, newContent, v.Passphrase); err != nil {
+	if err := v.encryptFile(filePath, newContent); err != nil {
 		return fmt.Errorf("re-encrypting entry: %w", err)
 	}
 	entry.UpdatedAt = NowUTC()
@@ -252,7 +343,7 @@ func (v *Vault) Verify() []error {
 			errs = append(errs, fmt.Errorf("%s: file missing", entry.Filename))
 			continue
 		}
-		if _, err := crypto.DecryptFile(filePath, v.Passphrase); err != nil {
+		if _, err := v.decryptFile(filePath); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", entry.Filename, err))
 		}
 	}
@@ -296,5 +387,32 @@ func (v *Vault) Export(outputDir string) error {
 		return fmt.Errorf("writing INDEX.md: %w", err)
 	}
 
+	return nil
+}
+
+// --- Internal helpers ---
+
+func createVaultDirs(dir string) error {
+	dirs := []string{
+		dir,
+		filepath.Join(dir, string(CategoryNotes)),
+		filepath.Join(dir, string(CategoryCredentials)),
+		filepath.Join(dir, string(CategoryDocuments)),
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0700); err != nil {
+			return fmt.Errorf("creating directory %s: %w", d, err)
+		}
+	}
+	return nil
+}
+
+func writeVaultReadme(dir string) error {
+	if err := os.WriteFile(filepath.Join(dir, ReadmeFile), []byte(readmeContent), 0644); err != nil {
+		return fmt.Errorf("writing README: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, DecryptInstructionsFile), []byte(decryptInstructionsContent), 0644); err != nil {
+		return fmt.Errorf("writing decrypt instructions: %w", err)
+	}
 	return nil
 }

@@ -3,6 +3,7 @@ package deadswitch
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -122,6 +123,30 @@ func TestStoreSwitchPayloadAndDecrypt(t *testing.T) {
 
 	if decrypted != passphrase {
 		t.Errorf("got %q, want %q", decrypted, passphrase)
+	}
+}
+
+func TestStoreSwitchMnemonicAndDecrypt(t *testing.T) {
+	appDir := t.TempDir()
+	words := []string{"abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract"}
+
+	if err := StoreSwitchMnemonic(appDir, words); err != nil {
+		t.Fatalf("StoreSwitchMnemonic: %v", err)
+	}
+
+	decrypted, err := DecryptSwitchPayload(appDir)
+	if err != nil {
+		t.Fatalf("DecryptSwitchPayload: %v", err)
+	}
+
+	expected := "MNEMONIC:abandon ability able about above absent absorb abstract"
+	if decrypted != expected {
+		t.Errorf("got %q, want %q", decrypted, expected)
+	}
+
+	// Verify it starts with MNEMONIC: prefix
+	if !strings.HasPrefix(decrypted, "MNEMONIC:") {
+		t.Error("mnemonic payload should start with MNEMONIC: prefix")
 	}
 }
 
