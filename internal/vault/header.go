@@ -60,6 +60,25 @@ type Header struct {
 type InitParams struct {
 	Password     string
 	DeviceID     string
+	// Optional KDF param overrides. Nil means use production defaults.
+	MnemonicKDFParams *crypto.Argon2Params
+	OwnerKDFParams    *crypto.Argon2Params
+}
+
+// mnemonicParams returns the mnemonic KDF params, using override if set.
+func (p InitParams) mnemonicParams() crypto.Argon2Params {
+	if p.MnemonicKDFParams != nil {
+		return *p.MnemonicKDFParams
+	}
+	return crypto.MnemonicSlotParams()
+}
+
+// ownerParams returns the owner/recovery KDF params, using override if set.
+func (p InitParams) ownerParams() crypto.Argon2Params {
+	if p.OwnerKDFParams != nil {
+		return *p.OwnerKDFParams
+	}
+	return crypto.OwnerSlotParams()
 }
 
 // InitResult holds the outputs from creating a new vault header.
@@ -113,19 +132,19 @@ func NewHeader(params InitParams) (*InitResult, error) {
 	}
 
 	// 7. Create mnemonic slot (slot 0)
-	mnemonicSlot, err := createMnemonicSlot(0, mnemonicEntropy, masterKey)
+	mnemonicSlot, err := createMnemonicSlot(0, mnemonicEntropy, masterKey, params.mnemonicParams())
 	if err != nil {
 		return nil, fmt.Errorf("creating mnemonic slot: %w", err)
 	}
 
 	// 8. Create owner slot (slot 1)
-	ownerSlot, err := createOwnerSlot(1, params.Password, deviceKey, params.DeviceID, masterKey)
+	ownerSlot, err := createOwnerSlot(1, params.Password, deviceKey, params.DeviceID, masterKey, params.ownerParams())
 	if err != nil {
 		return nil, fmt.Errorf("creating owner slot: %w", err)
 	}
 
 	// 9. Create recovery slot (slot 2) with encrypted recovery code
-	recoverySlot, err := createRecoverySlot(2, params.Password, recoveryCode, masterKey)
+	recoverySlot, err := createRecoverySlot(2, params.Password, recoveryCode, masterKey, params.ownerParams())
 	if err != nil {
 		return nil, fmt.Errorf("creating recovery slot: %w", err)
 	}
@@ -284,10 +303,15 @@ func (h *Header) GetEncryptedRecoveryCode() (ciphertext, nonce []byte, err error
 }
 
 // UpdateOwnerSlot re-wraps the master key with a new password + device key for a given device.
-func (h *Header) UpdateOwnerSlot(deviceID, newPassword string, deviceKey, masterKey []byte) error {
+// kdfParams is optional — pass nil to use production defaults.
+func (h *Header) UpdateOwnerSlot(deviceID, newPassword string, deviceKey, masterKey []byte, kdfParams *crypto.Argon2Params) error {
+	params := crypto.OwnerSlotParams()
+	if kdfParams != nil {
+		params = *kdfParams
+	}
 	for i, slot := range h.Slots {
 		if slot.Type == SlotTypeOwner && slot.DeviceID == deviceID {
-			newSlot, err := createOwnerSlot(slot.ID, newPassword, deviceKey, deviceID, masterKey)
+			newSlot, err := createOwnerSlot(slot.ID, newPassword, deviceKey, deviceID, masterKey, params)
 			if err != nil {
 				return fmt.Errorf("creating updated owner slot: %w", err)
 			}
@@ -299,10 +323,15 @@ func (h *Header) UpdateOwnerSlot(deviceID, newPassword string, deviceKey, master
 }
 
 // UpdateRecoverySlot re-wraps the master key with a new password + recovery code.
-func (h *Header) UpdateRecoverySlot(newPassword string, recoveryCode, masterKey []byte) error {
+// kdfParams is optional — pass nil to use production defaults.
+func (h *Header) UpdateRecoverySlot(newPassword string, recoveryCode, masterKey []byte, kdfParams *crypto.Argon2Params) error {
+	params := crypto.OwnerSlotParams()
+	if kdfParams != nil {
+		params = *kdfParams
+	}
 	for i, slot := range h.Slots {
 		if slot.Type == SlotTypeRecovery {
-			newSlot, err := createRecoverySlot(slot.ID, newPassword, recoveryCode, masterKey)
+			newSlot, err := createRecoverySlot(slot.ID, newPassword, recoveryCode, masterKey, params)
 			if err != nil {
 				return fmt.Errorf("creating updated recovery slot: %w", err)
 			}
@@ -314,7 +343,12 @@ func (h *Header) UpdateRecoverySlot(newPassword string, recoveryCode, masterKey 
 }
 
 // AddOwnerSlot adds a new owner slot for an additional device.
-func (h *Header) AddOwnerSlot(password string, deviceKey []byte, deviceID string, masterKey []byte) error {
+// kdfParams is optional — pass nil to use production defaults.
+func (h *Header) AddOwnerSlot(password string, deviceKey []byte, deviceID string, masterKey []byte, kdfParams *crypto.Argon2Params) error {
+	params := crypto.OwnerSlotParams()
+	if kdfParams != nil {
+		params = *kdfParams
+	}
 	nextID := 0
 	for _, slot := range h.Slots {
 		if slot.ID >= nextID {
@@ -322,7 +356,7 @@ func (h *Header) AddOwnerSlot(password string, deviceKey []byte, deviceID string
 		}
 	}
 
-	newSlot, err := createOwnerSlot(nextID, password, deviceKey, deviceID, masterKey)
+	newSlot, err := createOwnerSlot(nextID, password, deviceKey, deviceID, masterKey, params)
 	if err != nil {
 		return fmt.Errorf("creating owner slot: %w", err)
 	}
@@ -363,13 +397,12 @@ func LoadHeader(vaultDir string) (*Header, error) {
 
 // --- Internal helpers ---
 
-func createMnemonicSlot(id int, mnemonicEntropy, masterKey []byte) (*Slot, error) {
+func createMnemonicSlot(id int, mnemonicEntropy, masterKey []byte, params crypto.Argon2Params) (*Slot, error) {
 	salt := make([]byte, 32)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("generating salt: %w", err)
 	}
 
-	params := crypto.MnemonicSlotParams()
 	slotKey, err := crypto.DeriveKey(mnemonicEntropy, salt, params)
 	if err != nil {
 		return nil, fmt.Errorf("deriving key: %w", err)
@@ -392,7 +425,7 @@ func createMnemonicSlot(id int, mnemonicEntropy, masterKey []byte) (*Slot, error
 	}, nil
 }
 
-func createOwnerSlot(id int, password string, deviceKey []byte, deviceID string, masterKey []byte) (*Slot, error) {
+func createOwnerSlot(id int, password string, deviceKey []byte, deviceID string, masterKey []byte, params crypto.Argon2Params) (*Slot, error) {
 	salt := make([]byte, 32)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("generating salt: %w", err)
@@ -402,7 +435,6 @@ func createOwnerSlot(id int, password string, deviceKey []byte, deviceID string,
 		return nil, fmt.Errorf("generating device key salt: %w", err)
 	}
 
-	params := crypto.OwnerSlotParams()
 	pwDerived, err := crypto.DeriveKey([]byte(password), salt, params)
 	if err != nil {
 		return nil, fmt.Errorf("deriving password key: %w", err)
@@ -433,13 +465,12 @@ func createOwnerSlot(id int, password string, deviceKey []byte, deviceID string,
 	}, nil
 }
 
-func createRecoverySlot(id int, password string, recoveryCode, masterKey []byte) (*Slot, error) {
+func createRecoverySlot(id int, password string, recoveryCode, masterKey []byte, params crypto.Argon2Params) (*Slot, error) {
 	salt := make([]byte, 32)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("generating salt: %w", err)
 	}
 
-	params := crypto.OwnerSlotParams()
 	input := append([]byte(password), recoveryCode...)
 	slotKey, err := crypto.DeriveKey(input, salt, params)
 	crypto.ZeroBytes(input)

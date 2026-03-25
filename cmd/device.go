@@ -82,7 +82,7 @@ var deviceAddCmd = &cobra.Command{
 		}
 
 		// Add owner slot
-		if err := header.AddOwnerSlot(password, deviceKey, hostname, masterKey); err != nil {
+		if err := header.AddOwnerSlot(password, deviceKey, hostname, masterKey, nil); err != nil {
 			return fmt.Errorf("adding owner slot: %w", err)
 		}
 

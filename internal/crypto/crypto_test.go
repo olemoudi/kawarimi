@@ -9,6 +9,12 @@ import (
 	"github.com/olemoudi/kawarimi/internal/crypto"
 )
 
+func TestMain(m *testing.M) {
+	// Use fast scrypt for v1 encryption tests
+	crypto.ScryptWorkFactor = 10
+	os.Exit(m.Run())
+}
+
 func TestEncryptDecryptRoundtrip(t *testing.T) {
 	passphrase := "test-passphrase-123"
 	plaintext := []byte("hello world, this is sensitive data")

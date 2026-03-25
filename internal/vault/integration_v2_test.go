@@ -15,9 +15,12 @@ func TestV2FullWorkflow(t *testing.T) {
 	dir := t.TempDir()
 
 	// === INIT with header ===
+	tp := crypto.TestParams()
 	params := vault.InitParams{
-		Password: "v2-test-password",
-		DeviceID: "test-device",
+		Password:          "v2-test-password",
+		DeviceID:          "test-device",
+		MnemonicKDFParams: &tp,
+		OwnerKDFParams:    &tp,
 	}
 	result, err := vault.NewHeader(params)
 	if err != nil {
@@ -198,7 +201,13 @@ func TestV2PasswordChange(t *testing.T) {
 	oldPassword := "old-pw"
 	newPassword := "new-pw"
 
-	params := vault.InitParams{Password: oldPassword, DeviceID: "dev"}
+	tp := crypto.TestParams()
+	params := vault.InitParams{
+		Password:          oldPassword,
+		DeviceID:          "dev",
+		MnemonicKDFParams: &tp,
+		OwnerKDFParams:    &tp,
+	}
 	result, _ := vault.NewHeader(params)
 	defer crypto.ZeroBytes(result.MasterKey)
 	vault.SaveHeader(dir, result.Header)
@@ -211,8 +220,8 @@ func TestV2PasswordChange(t *testing.T) {
 	encRC, rcNonce, _ := result.Header.GetEncryptedRecoveryCode()
 	recoveryCode, _ := crypto.UnwrapKey(result.MasterKey, encRC, rcNonce)
 
-	result.Header.UpdateOwnerSlot("dev", newPassword, result.DeviceKey, result.MasterKey)
-	result.Header.UpdateRecoverySlot(newPassword, recoveryCode, result.MasterKey)
+	result.Header.UpdateOwnerSlot("dev", newPassword, result.DeviceKey, result.MasterKey, &tp)
+	result.Header.UpdateRecoverySlot(newPassword, recoveryCode, result.MasterKey, &tp)
 	vault.SaveHeader(dir, result.Header)
 
 	// Re-encrypt device key with new password

@@ -11,7 +11,8 @@ import (
 // MigrateV1ToV2 migrates a v1 vault (passphrase-based) to v2 (identity-based with slot architecture).
 // This is an O(n) operation: every file must be re-encrypted from scrypt to X25519.
 // Returns the InitResult containing mnemonic words, recovery code, device key, etc.
-func MigrateV1ToV2(vaultDir, passphrase, password, deviceID string) (*InitResult, error) {
+// kdfParams is optional — pass nil to use production defaults.
+func MigrateV1ToV2(vaultDir, passphrase, password, deviceID string, kdfParams *crypto.Argon2Params) (*InitResult, error) {
 	// 1. Open v1 vault
 	v1, err := Open(vaultDir, passphrase)
 	if err != nil {
@@ -19,10 +20,15 @@ func MigrateV1ToV2(vaultDir, passphrase, password, deviceID string) (*InitResult
 	}
 
 	// 2. Create header (generates MK, age identity, slots, etc.)
-	result, err := NewHeader(InitParams{
+	initParams := InitParams{
 		Password: password,
 		DeviceID: deviceID,
-	})
+	}
+	if kdfParams != nil {
+		initParams.MnemonicKDFParams = kdfParams
+		initParams.OwnerKDFParams = kdfParams
+	}
+	result, err := NewHeader(initParams)
 	if err != nil {
 		return nil, fmt.Errorf("creating vault header: %w", err)
 	}

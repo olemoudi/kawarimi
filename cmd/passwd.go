@@ -84,7 +84,7 @@ func passwdV2(cfg *config.Config) error {
 	}
 
 	// Update owner slot with new password
-	if err := header.UpdateOwnerSlot(hostname, newPassword, deviceKey, masterKey); err != nil {
+	if err := header.UpdateOwnerSlot(hostname, newPassword, deviceKey, masterKey, nil); err != nil {
 		return fmt.Errorf("updating owner slot: %w", err)
 	}
 
@@ -100,7 +100,7 @@ func passwdV2(cfg *config.Config) error {
 	}
 	defer crypto.ZeroBytes(recoveryCode)
 
-	if err := header.UpdateRecoverySlot(newPassword, recoveryCode, masterKey); err != nil {
+	if err := header.UpdateRecoverySlot(newPassword, recoveryCode, masterKey, nil); err != nil {
 		return fmt.Errorf("updating recovery slot: %w", err)
 	}
 

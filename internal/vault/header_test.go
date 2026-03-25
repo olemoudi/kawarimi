@@ -10,11 +10,14 @@ import (
 	"github.com/olemoudi/kawarimi/internal/vault"
 )
 
-// testInitParams returns minimal params for testing.
+// testInitParams returns params with fast KDF for testing.
 func testInitParams() vault.InitParams {
+	tp := crypto.TestParams()
 	return vault.InitParams{
-		Password: "test-password-123",
-		DeviceID: "test-device",
+		Password:          "test-password-123",
+		DeviceID:          "test-device",
+		MnemonicKDFParams: &tp,
+		OwnerKDFParams:    &tp,
 	}
 }
 
@@ -200,7 +203,7 @@ func TestUpdateOwnerSlot(t *testing.T) {
 	defer crypto.ZeroBytes(result.MasterKey)
 
 	newPassword := "new-password-456"
-	err := result.Header.UpdateOwnerSlot(params.DeviceID, newPassword, result.DeviceKey, result.MasterKey)
+	err := result.Header.UpdateOwnerSlot(params.DeviceID, newPassword, result.DeviceKey, result.MasterKey, params.OwnerKDFParams)
 	if err != nil {
 		t.Fatalf("UpdateOwnerSlot failed: %v", err)
 	}
@@ -229,7 +232,7 @@ func TestUpdateRecoverySlot(t *testing.T) {
 	defer crypto.ZeroBytes(result.MasterKey)
 
 	newPassword := "new-password-789"
-	err := result.Header.UpdateRecoverySlot(newPassword, result.RecoveryCode, result.MasterKey)
+	err := result.Header.UpdateRecoverySlot(newPassword, result.RecoveryCode, result.MasterKey, params.OwnerKDFParams)
 	if err != nil {
 		t.Fatalf("UpdateRecoverySlot failed: %v", err)
 	}
@@ -253,7 +256,7 @@ func TestAddOwnerSlot(t *testing.T) {
 
 	// Add a second device
 	newDeviceKey, _ := crypto.GenerateDeviceKey()
-	err := result.Header.AddOwnerSlot(params.Password, newDeviceKey, "second-device", result.MasterKey)
+	err := result.Header.AddOwnerSlot(params.Password, newDeviceKey, "second-device", result.MasterKey, params.OwnerKDFParams)
 	if err != nil {
 		t.Fatalf("AddOwnerSlot failed: %v", err)
 	}

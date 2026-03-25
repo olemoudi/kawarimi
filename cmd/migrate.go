@@ -53,7 +53,7 @@ var migrateCmd = &cobra.Command{
 		}
 
 		fmt.Println("\nMigrating vault...")
-		result, err := vault.MigrateV1ToV2(cfg.VaultDir, passphrase, password, hostname)
+		result, err := vault.MigrateV1ToV2(cfg.VaultDir, passphrase, password, hostname, nil)
 		if err != nil {
 			return fmt.Errorf("migration failed: %w", err)
 		}

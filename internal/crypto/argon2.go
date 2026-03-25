@@ -63,6 +63,12 @@ func ValidateArgon2Params(params Argon2Params) error {
 	return nil
 }
 
+// TestParams returns minimum-acceptable Argon2id parameters for use in tests.
+// Do not use in production code.
+func TestParams() Argon2Params {
+	return Argon2Params{Time: 1, MemoryKiB: 65536, Threads: 1}
+}
+
 // DeriveKey derives a 32-byte key from input material using Argon2id.
 func DeriveKey(input, salt []byte, params Argon2Params) ([]byte, error) {
 	if len(salt) < 16 {

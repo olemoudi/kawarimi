@@ -40,7 +40,7 @@ func TestEncryptDecryptDeviceKey(t *testing.T) {
 
 	password := "test-password-123"
 
-	dkf, err := crypto.EncryptDeviceKey(deviceKey, password)
+	dkf, err := crypto.EncryptDeviceKeyWithParams(deviceKey, password, crypto.TestParams())
 	if err != nil {
 		t.Fatalf("EncryptDeviceKey failed: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestEncryptDecryptDeviceKey(t *testing.T) {
 
 func TestDecryptDeviceKeyWrongPassword(t *testing.T) {
 	deviceKey, _ := crypto.GenerateDeviceKey()
-	dkf, _ := crypto.EncryptDeviceKey(deviceKey, "correct-password")
+	dkf, _ := crypto.EncryptDeviceKeyWithParams(deviceKey, "correct-password", crypto.TestParams())
 
 	_, err := crypto.DecryptDeviceKey(dkf, "wrong-password")
 	if err == nil {
@@ -83,7 +83,7 @@ func TestSaveLoadDeviceKeyFile(t *testing.T) {
 	path := filepath.Join(tmpDir, "device.key")
 
 	deviceKey, _ := crypto.GenerateDeviceKey()
-	dkf, _ := crypto.EncryptDeviceKey(deviceKey, "password")
+	dkf, _ := crypto.EncryptDeviceKeyWithParams(deviceKey, "password", crypto.TestParams())
 
 	if err := crypto.SaveDeviceKeyFile(path, dkf); err != nil {
 		t.Fatalf("SaveDeviceKeyFile failed: %v", err)

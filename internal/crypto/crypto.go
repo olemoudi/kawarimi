@@ -9,11 +9,19 @@ import (
 	"filippo.io/age"
 )
 
+// ScryptWorkFactor overrides the age scrypt work factor for v1 encryption.
+// 0 means use the library default (production). Set to a lower value (e.g., 10) in tests.
+// This only affects the deprecated v1 passphrase-based encryption.
+var ScryptWorkFactor int
+
 // Encrypt encrypts plaintext bytes with the given passphrase using age scrypt.
 func Encrypt(plaintext []byte, passphrase string) ([]byte, error) {
 	recipient, err := age.NewScryptRecipient(passphrase)
 	if err != nil {
 		return nil, fmt.Errorf("creating scrypt recipient: %w", err)
+	}
+	if ScryptWorkFactor > 0 {
+		recipient.SetWorkFactor(ScryptWorkFactor)
 	}
 
 	var buf bytes.Buffer

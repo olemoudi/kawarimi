@@ -31,7 +31,8 @@ func TestMigrateV1ToV2(t *testing.T) {
 
 	// Migrate
 	newPassword := "v2-password"
-	result, err := vault.MigrateV1ToV2(dir, oldPassphrase, newPassword, "test-device")
+	tp := crypto.TestParams()
+	result, err := vault.MigrateV1ToV2(dir, oldPassphrase, newPassword, "test-device", &tp)
 	if err != nil {
 		t.Fatalf("MigrateV1ToV2: %v", err)
 	}

@@ -28,12 +28,15 @@ func GenerateDeviceKey() ([]byte, error) {
 
 // EncryptDeviceKey encrypts a device key with a password for storage at rest.
 func EncryptDeviceKey(deviceKey []byte, password string) (*DeviceKeyFile, error) {
+	return EncryptDeviceKeyWithParams(deviceKey, password, DeviceKeyParams())
+}
+
+// EncryptDeviceKeyWithParams encrypts a device key with a password using the given KDF params.
+func EncryptDeviceKeyWithParams(deviceKey []byte, password string, params Argon2Params) (*DeviceKeyFile, error) {
 	salt := make([]byte, 32)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("generating salt: %w", err)
 	}
-
-	params := DeviceKeyParams()
 	wrappingKey, err := DeriveKey([]byte(password), salt, params)
 	if err != nil {
 		return nil, fmt.Errorf("deriving wrapping key: %w", err)
