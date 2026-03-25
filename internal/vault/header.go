@@ -480,13 +480,20 @@ func (h *Header) decryptAgeIdentity(masterKey []byte) (string, error) {
 	return string(identityBytes), nil
 }
 
+// headerForHMAC returns a copy of the header with HeaderHMAC cleared for HMAC computation.
+// This avoids mutating the original header, making the operation safe for concurrent use.
+func (h *Header) headerForHMAC() ([]byte, error) {
+	clone := *h
+	clone.HeaderHMAC = nil
+	// Deep copy slots to avoid aliasing
+	clone.Slots = make([]Slot, len(h.Slots))
+	copy(clone.Slots, h.Slots)
+	return json.Marshal(&clone)
+}
+
 // computeHMAC computes the HMAC-SHA256 of the header (excluding the HMAC field itself).
 func (h *Header) computeHMAC(masterKey []byte) error {
-	savedHMAC := h.HeaderHMAC
-	h.HeaderHMAC = nil
-
-	data, err := json.Marshal(h)
-	h.HeaderHMAC = savedHMAC
+	data, err := h.headerForHMAC()
 	if err != nil {
 		return fmt.Errorf("marshaling header for HMAC: %w", err)
 	}
@@ -499,11 +506,7 @@ func (h *Header) computeHMAC(masterKey []byte) error {
 
 // verifyHMAC verifies the header HMAC with the given master key.
 func (h *Header) verifyHMAC(masterKey []byte) error {
-	expectedHMAC := h.HeaderHMAC
-	h.HeaderHMAC = nil
-
-	data, err := json.Marshal(h)
-	h.HeaderHMAC = expectedHMAC
+	data, err := h.headerForHMAC()
 	if err != nil {
 		return fmt.Errorf("marshaling header for HMAC: %w", err)
 	}
@@ -512,7 +515,7 @@ func (h *Header) verifyHMAC(masterKey []byte) error {
 	mac.Write(data)
 	computed := mac.Sum(nil)
 
-	if !hmac.Equal(computed, expectedHMAC) {
+	if !hmac.Equal(computed, h.HeaderHMAC) {
 		return fmt.Errorf("HMAC verification failed")
 	}
 	return nil

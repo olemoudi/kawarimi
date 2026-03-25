@@ -14,8 +14,8 @@ func TestDeriveKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Use minimal params for test speed
-	params := crypto.Argon2Params{Time: 1, MemoryKiB: 64 * 1024, Threads: 1}
+	// Use minimum acceptable params for test speed (must be >= MinArgon2MemoryKiB)
+	params := crypto.Argon2Params{Time: 1, MemoryKiB: 65536, Threads: 1}
 
 	key, err := crypto.DeriveKey([]byte("test-password"), salt, params)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestDeriveKey(t *testing.T) {
 }
 
 func TestDeriveKeyShortSalt(t *testing.T) {
-	_, err := crypto.DeriveKey([]byte("pass"), []byte("short"), crypto.Argon2Params{Time: 1, MemoryKiB: 64 * 1024, Threads: 1})
+	_, err := crypto.DeriveKey([]byte("pass"), []byte("short"), crypto.Argon2Params{Time: 1, MemoryKiB: 65536, Threads: 1})
 	if err == nil {
 		t.Fatal("expected error for short salt")
 	}
@@ -74,6 +74,25 @@ func TestDeriveKeyZeroParams(t *testing.T) {
 	_, err := crypto.DeriveKey([]byte("pass"), salt, crypto.Argon2Params{})
 	if err == nil {
 		t.Fatal("expected error for zero params")
+	}
+}
+
+func TestValidateArgon2Params(t *testing.T) {
+	// Valid params
+	if err := crypto.ValidateArgon2Params(crypto.OwnerSlotParams()); err != nil {
+		t.Fatalf("owner params should be valid: %v", err)
+	}
+
+	// Too low memory (potential downgrade attack)
+	err := crypto.ValidateArgon2Params(crypto.Argon2Params{Time: 1, MemoryKiB: 1024, Threads: 1})
+	if err == nil {
+		t.Fatal("should reject low memory params")
+	}
+
+	// Too low time
+	err = crypto.ValidateArgon2Params(crypto.Argon2Params{Time: 0, MemoryKiB: 65536, Threads: 1})
+	if err == nil {
+		t.Fatal("should reject zero time")
 	}
 }
 

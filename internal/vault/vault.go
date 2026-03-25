@@ -363,6 +363,11 @@ func (v *Vault) Export(outputDir string) error {
 		}
 	}
 
+	absOutputDir, err := filepath.Abs(outputDir)
+	if err != nil {
+		return fmt.Errorf("resolving output directory: %w", err)
+	}
+
 	for _, entry := range v.Manifest.Entries {
 		data, err := v.ShowEntry(entry)
 		if err != nil {
@@ -375,6 +380,15 @@ func (v *Vault) Export(outputDir string) error {
 			outName = outName[:len(outName)-4]
 		}
 		outPath := filepath.Join(outputDir, outName)
+
+		// Validate path stays within output directory
+		absOutPath, err := filepath.Abs(outPath)
+		if err != nil {
+			return fmt.Errorf("resolving path for %s: %w", outName, err)
+		}
+		if !strings.HasPrefix(absOutPath, absOutputDir+string(filepath.Separator)) {
+			return fmt.Errorf("path traversal detected in entry filename: %s", entry.Filename)
+		}
 
 		if err := os.WriteFile(outPath, data, 0600); err != nil {
 			return fmt.Errorf("writing %s: %w", outPath, err)

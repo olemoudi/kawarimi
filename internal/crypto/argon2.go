@@ -42,13 +42,34 @@ func DeviceKeyParams() Argon2Params {
 	return OwnerSlotParams()
 }
 
+// MinArgon2Time is the minimum acceptable Argon2id time parameter.
+const MinArgon2Time = 1
+
+// MinArgon2MemoryKiB is the minimum acceptable Argon2id memory parameter (64 MiB).
+const MinArgon2MemoryKiB = 65536
+
+// ValidateArgon2Params checks that Argon2id parameters meet minimum security thresholds.
+// This prevents KDF downgrade attacks where an attacker modifies stored params.
+func ValidateArgon2Params(params Argon2Params) error {
+	if params.Time < MinArgon2Time {
+		return fmt.Errorf("argon2 time parameter too low: %d (minimum %d)", params.Time, MinArgon2Time)
+	}
+	if params.MemoryKiB < MinArgon2MemoryKiB {
+		return fmt.Errorf("argon2 memory parameter too low: %d KiB (minimum %d KiB)", params.MemoryKiB, MinArgon2MemoryKiB)
+	}
+	if params.Threads < 1 {
+		return fmt.Errorf("argon2 threads parameter too low: %d (minimum 1)", params.Threads)
+	}
+	return nil
+}
+
 // DeriveKey derives a 32-byte key from input material using Argon2id.
 func DeriveKey(input, salt []byte, params Argon2Params) ([]byte, error) {
 	if len(salt) < 16 {
 		return nil, fmt.Errorf("salt must be at least 16 bytes, got %d", len(salt))
 	}
-	if params.Time == 0 || params.MemoryKiB == 0 || params.Threads == 0 {
-		return nil, fmt.Errorf("argon2id params must be non-zero")
+	if err := ValidateArgon2Params(params); err != nil {
+		return nil, err
 	}
 
 	key := argon2.IDKey(input, salt, params.Time, params.MemoryKiB, params.Threads, 32)
