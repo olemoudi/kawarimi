@@ -1,19 +1,28 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/olemoudi/kawarimi/internal/config"
+	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
 )
 
-var useMnemonic bool
+var (
+	useMnemonic bool
+	useSealed   bool
+	vaultPath   string
+)
 
 func init() {
 	exportCmd.Flags().BoolVar(&useMnemonic, "mnemonic", false, "Use mnemonic words to decrypt (receiver mode)")
+	exportCmd.Flags().BoolVar(&useSealed, "sealed", false, "Use sealed payload + recipient passphrase to decrypt (receiver mode)")
+	exportCmd.Flags().StringVar(&vaultPath, "vault", "", "Path to vault directory (for standalone use without config)")
 	rootCmd.AddCommand(exportCmd)
 }
 
@@ -27,7 +36,9 @@ var exportCmd = &cobra.Command{
 		var v *vault.Vault
 		var err error
 
-		if useMnemonic {
+		if useSealed {
+			v, err = exportWithSealedPayload()
+		} else if useMnemonic {
 			v, err = exportWithMnemonic()
 		} else {
 			v, err = openVault()
@@ -46,15 +57,94 @@ var exportCmd = &cobra.Command{
 	},
 }
 
-func exportWithMnemonic() (*vault.Vault, error) {
-	cfg, err := config.Load()
+func exportWithSealedPayload() (*vault.Vault, error) {
+	// Determine vault directory
+	vaultDir, err := resolveVaultDir()
 	if err != nil {
 		return nil, err
 	}
 
-	header, err := vault.LoadHeader(cfg.VaultDir)
+	header, err := vault.LoadHeader(vaultDir)
 	if err != nil {
-		// No header — try detecting vault dir from args or current dir
+		return nil, fmt.Errorf("loading vault header: %w", err)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+
+	// Try to auto-detect VAULT_SHARE.txt in same directory (legacy, not used in sealed mode)
+	// Prompt for sealed payload
+	fmt.Fprintln(os.Stderr, "Paste the sealed payload from the email (base64 string):")
+	sealedBase64, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("reading sealed payload: %w", err)
+	}
+	sealedBase64 = strings.TrimSpace(sealedBase64)
+
+	ciphertext, err := crypto.DecodeSealedPayload(sealedBase64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid sealed payload: %w", err)
+	}
+
+	// Prompt for recipient passphrase
+	fmt.Fprint(os.Stderr, "Enter recipient passphrase (from physical card): ")
+	passphrase, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("reading passphrase: %w", err)
+	}
+	passphrase = strings.TrimSpace(passphrase)
+
+	// Unseal to recover mnemonic entropy
+	fmt.Fprintln(os.Stderr, "Decrypting sealed payload...")
+	entropy, err := crypto.UnsealMnemonic(ciphertext, passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting sealed payload (wrong passphrase?): %w", err)
+	}
+	defer crypto.ZeroBytes(entropy)
+
+	// Convert entropy to mnemonic words
+	words, err := crypto.EncodeMnemonic(entropy)
+	if err != nil {
+		return nil, fmt.Errorf("encoding mnemonic: %w", err)
+	}
+
+	// Open vault with mnemonic
+	_, ageIdentity, err := header.OpenWithMnemonic(words)
+	if err != nil {
+		return nil, fmt.Errorf("unlocking vault: %w", err)
+	}
+
+	fmt.Fprintln(os.Stderr, "Vault unlocked successfully.")
+
+	return vault.OpenV2(vaultDir, ageIdentity, header.AgeRecipient)
+}
+
+func resolveVaultDir() (string, error) {
+	// Explicit --vault flag
+	if vaultPath != "" {
+		return vaultPath, nil
+	}
+
+	// Try to auto-detect vault/ subdirectory (from extracted package)
+	if _, err := os.Stat(filepath.Join("vault", vault.HeaderFile)); err == nil {
+		return "vault", nil
+	}
+
+	// Fall back to config
+	cfg, err := config.Load()
+	if err != nil {
+		return "", fmt.Errorf("no vault found: use --vault flag or run from extracted package directory: %w", err)
+	}
+	return cfg.VaultDir, nil
+}
+
+func exportWithMnemonic() (*vault.Vault, error) {
+	vaultDir, err := resolveVaultDir()
+	if err != nil {
+		return nil, err
+	}
+
+	header, err := vault.LoadHeader(vaultDir)
+	if err != nil {
 		return nil, fmt.Errorf("loading vault header: %w", err)
 	}
 
@@ -73,7 +163,7 @@ func exportWithMnemonic() (*vault.Vault, error) {
 		return nil, fmt.Errorf("unlocking vault with mnemonic: %w", err)
 	}
 
-	v, err := vault.OpenV2(cfg.VaultDir, ageIdentity, header.AgeRecipient)
+	v, err := vault.OpenV2(vaultDir, ageIdentity, header.AgeRecipient)
 	if err != nil {
 		return nil, fmt.Errorf("opening vault: %w", err)
 	}

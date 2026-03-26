@@ -96,6 +96,29 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("saving config: %w", err)
 		}
 
+		// Generate recipient passphrase and sealed payload for DMS
+		recipientPassphrase, err := crypto.GenerateRecipientPassphrase()
+		if err != nil {
+			return fmt.Errorf("generating recipient passphrase: %w", err)
+		}
+
+		mnemonicEntropy, err := crypto.DecodeMnemonic(result.MnemonicWords)
+		if err != nil {
+			return fmt.Errorf("encoding mnemonic entropy: %w", err)
+		}
+
+		sealedPayload, err := crypto.SealMnemonic(mnemonicEntropy, recipientPassphrase)
+		if err != nil {
+			return fmt.Errorf("sealing mnemonic: %w", err)
+		}
+		crypto.ZeroBytes(mnemonicEntropy)
+
+		// Save sealed payload for later use with switch setup
+		sealedPath := filepath.Join(appDir, "sealed-payload.age")
+		if err := os.WriteFile(sealedPath, sealedPayload, 0600); err != nil {
+			return fmt.Errorf("saving sealed payload: %w", err)
+		}
+
 		// Display critical secrets
 		fmt.Println()
 		fmt.Println("========================================")
@@ -103,7 +126,7 @@ var initCmd = &cobra.Command{
 		fmt.Println("  They will NOT be shown again!")
 		fmt.Println("========================================")
 		fmt.Println()
-		fmt.Println("MNEMONIC WORDS (for your family/receiver):")
+		fmt.Println("MNEMONIC WORDS (personal backup — store in a safe):")
 		for i, w := range result.MnemonicWords {
 			fmt.Printf("  %d. %s\n", i+1, w)
 		}
@@ -111,16 +134,27 @@ var initCmd = &cobra.Command{
 		fmt.Println("RECOVERY CODE (to regain access if you lose this device):")
 		fmt.Printf("  %s\n", crypto.FormatRecoveryCode(result.RecoveryCode))
 		fmt.Println()
+		fmt.Println("RECIPIENT PASSPHRASE (print on a card, give to your recipients):")
+		fmt.Printf("  %s\n", recipientPassphrase)
+		fmt.Println()
+		fmt.Println("  The mnemonic above is your personal backup.")
+		fmt.Println("  The recipient passphrase is what your recipients need")
+		fmt.Println("  (along with the sealed payload from the dead man's switch)")
+		fmt.Println("  to decrypt the vault.")
+		fmt.Println()
 		fmt.Println("========================================")
 		fmt.Println()
 		fmt.Printf("Vault initialized at %s\n", v.Dir)
 		fmt.Printf("Device key saved to %s\n", deviceKeyPath)
+		fmt.Printf("Sealed payload saved to %s\n", sealedPath)
 		fmt.Printf("Config saved to ~/%s/%s\n", config.AppDir, config.ConfigFile)
 		fmt.Println()
 		fmt.Println("Next steps:")
 		fmt.Println("  kawarimi add note \"Bank Accounts\"    — add a text note")
 		fmt.Println("  kawarimi add credential               — add login credentials")
 		fmt.Println("  kawarimi add document invoice.pdf      — add a document")
+		fmt.Println("  kawarimi switch setup                  — configure the dead man's switch")
+		fmt.Println("  kawarimi package build                 — build distributable vault package")
 
 		// Zero sensitive data
 		crypto.ZeroBytes(result.DeviceKey)

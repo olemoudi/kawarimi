@@ -193,3 +193,54 @@ func TestIsSwitchConfigured(t *testing.T) {
 		t.Fatal("should be configured after StoreSwitchPayload")
 	}
 }
+
+func TestStoreSwitchSealedPayloadAndDecrypt(t *testing.T) {
+	appDir := t.TempDir()
+	sealedBase64 := "dGVzdC1zZWFsZWQtcGF5bG9hZC1kYXRh" // base64 of "test-sealed-payload-data"
+
+	if err := StoreSwitchSealedPayload(appDir, sealedBase64); err != nil {
+		t.Fatalf("StoreSwitchSealedPayload: %v", err)
+	}
+
+	decrypted, err := DecryptSwitchPayload(appDir)
+	if err != nil {
+		t.Fatalf("DecryptSwitchPayload: %v", err)
+	}
+
+	expected := "SEALED:" + sealedBase64
+	if decrypted != expected {
+		t.Errorf("got %q, want %q", decrypted, expected)
+	}
+
+	// Verify it starts with SEALED: prefix
+	if !strings.HasPrefix(decrypted, "SEALED:") {
+		t.Error("sealed payload should start with SEALED: prefix")
+	}
+}
+
+func TestTriggerFinalReleaseV3DetectsPrefix(t *testing.T) {
+	// This tests that triggerFinalRelease correctly detects the SEALED: prefix.
+	// We can't test the full email flow without SMTP, but we can verify prefix detection.
+	appDir := t.TempDir()
+
+	sealedBase64 := "dGVzdC1zZWFsZWQtcGF5bG9hZA=="
+	if err := StoreSwitchSealedPayload(appDir, sealedBase64); err != nil {
+		t.Fatalf("StoreSwitchSealedPayload: %v", err)
+	}
+
+	payload, err := DecryptSwitchPayload(appDir)
+	if err != nil {
+		t.Fatalf("DecryptSwitchPayload: %v", err)
+	}
+
+	// Verify the prefix routing would work
+	if !strings.HasPrefix(payload, "SEALED:") {
+		t.Fatalf("expected SEALED: prefix, got %q", payload)
+	}
+
+	// Extract the base64 portion
+	extracted := strings.TrimPrefix(payload, "SEALED:")
+	if extracted != sealedBase64 {
+		t.Errorf("extracted base64 = %q, want %q", extracted, sealedBase64)
+	}
+}

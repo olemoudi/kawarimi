@@ -49,6 +49,8 @@ type SwitchConfig struct {
 	// IMAP configuration for email reply check-in
 	IMAPServer string `json:"imap_server,omitempty"`
 	IMAPPort   int    `json:"imap_port,omitempty"`
+	// Vault package location(s) — where recipients can download the vault package
+	VaultPackageLocation string `json:"vault_package_location,omitempty"`
 }
 
 // DefaultSwitchConfig returns a config with default escalation thresholds.
@@ -215,7 +217,10 @@ func triggerFinalRelease(switchCfg *SwitchConfig, appDir string) error {
 		return fmt.Errorf("decrypting switch payload: %w", err)
 	}
 
-	// Detect if this is a v2 mnemonic payload (starts with "MNEMONIC:")
+	// Detect payload type by prefix
+	if strings.HasPrefix(payload, "SEALED:") {
+		return triggerFinalReleaseV3(switchCfg, payload)
+	}
 	if strings.HasPrefix(payload, "MNEMONIC:") {
 		return triggerFinalReleaseV2(switchCfg, payload)
 	}
@@ -320,6 +325,56 @@ beyond the intended recipients.
 	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
 }
 
+func triggerFinalReleaseV3(switchCfg *SwitchConfig, payload string) error {
+	sealedBase64 := strings.TrimPrefix(payload, "SEALED:")
+
+	// Vault package location
+	locationSection := "1. Download the vault package:\n"
+	if switchCfg.VaultPackageLocation != "" {
+		locationSection += "   " + strings.ReplaceAll(switchCfg.VaultPackageLocation, "\n", "\n   ")
+	} else if switchCfg.DeliveryInstructions != "" {
+		locationSection += "   " + strings.ReplaceAll(switchCfg.DeliveryInstructions, "\n", "\n   ")
+	} else if switchCfg.VaultRepoURL != "" {
+		locationSection += fmt.Sprintf("   Git repository: %s\n   Run: git clone %s", switchCfg.VaultRepoURL, switchCfg.VaultRepoURL)
+	} else {
+		locationSection += "   Check with family for the vault package location."
+	}
+
+	subject := "Important: Access Information Vault"
+	body := fmt.Sprintf(`This is an automated message from the Kawarimi information vault.
+
+The vault owner has not checked in for an extended period.
+
+HOW TO ACCESS THE VAULT:
+
+%s
+
+2. Extract the vault package (zip file).
+
+3. Find the kawarimi program for your computer:
+   - kawarimi-linux-amd64     (Linux)
+   - kawarimi-darwin-arm64    (Mac with Apple Silicon)
+   - kawarimi-windows-amd64.exe (Windows)
+
+4. Open a terminal/command prompt and run:
+   ./kawarimi export --sealed ./decrypted/
+
+5. When prompted, paste this sealed payload:
+
+%s
+
+6. When prompted, enter the RECIPIENT PASSPHRASE from the
+   physical card given to you by the vault owner.
+
+7. Your decrypted files will be in the ./decrypted/ directory.
+
+IMPORTANT: Keep the recipient passphrase card secure.
+Do not share it beyond the intended recipients.
+`, locationSection, sealedBase64)
+
+	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
+}
+
 // DecryptSwitchPayload reads the vault passphrase from the switch payload.
 func DecryptSwitchPayload(appDir string) (string, error) {
 	identityPath := filepath.Join(appDir, "switch-identity.key")
@@ -341,6 +396,14 @@ func DecryptSwitchPayload(appDir string) (string, error) {
 // StoreSwitchMnemonic encrypts and stores mnemonic words for the switch (v2).
 func StoreSwitchMnemonic(appDir string, words []string) error {
 	payload := "MNEMONIC:" + strings.Join(words, " ")
+	return StoreSwitchPayload(appDir, payload)
+}
+
+// StoreSwitchSealedPayload encrypts and stores a sealed payload for the switch (v3).
+// The sealed payload is an age ciphertext that can only be decrypted with the
+// recipient passphrase (which the DMS does not have).
+func StoreSwitchSealedPayload(appDir string, sealedPayloadBase64 string) error {
+	payload := "SEALED:" + sealedPayloadBase64
 	return StoreSwitchPayload(appDir, payload)
 }
 

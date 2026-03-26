@@ -150,62 +150,91 @@ var switchSetupCmd = &cobra.Command{
 			}
 		}
 
-		// Delivery instructions
+		// Vault package location (for sealed payload mode)
 		fmt.Println()
-		fmt.Println("-- Vault Delivery Instructions --")
-		fmt.Println("How will the receiver get the vault files?")
-		switchCfg.VaultRepoURL = promptLine(reader, "Vault git repo URL (if applicable): ")
-		fmt.Println("Custom delivery instructions (free text, e.g., 'Contact John at 555-1234")
-		fmt.Println("who has a USB copy' or 'Download from https://...')")
-		switchCfg.DeliveryInstructions = promptLine(reader, "Instructions (leave empty for default): ")
+		fmt.Println("-- Vault Package Location --")
+		fmt.Println("Where can recipients download the vault package?")
+		fmt.Println("(e.g., a Google Drive link, GitHub release URL, or instructions)")
+		switchCfg.VaultPackageLocation = promptLine(reader, "Vault package location: ")
 
-		// Mnemonic delivery mode
-		fmt.Println()
-		fmt.Println("-- Mnemonic Delivery --")
-		fmt.Println("How should the 8 mnemonic words be delivered to the receiver?")
-		fmt.Println("  1) email    - Include words directly in the notification email")
-		fmt.Println("  2) physical - Reference a physical location (sealed envelope, safe)")
-		modeStr := promptLine(reader, "Mode [physical]: ")
-		if strings.HasPrefix(strings.ToLower(modeStr), "e") || modeStr == "1" {
-			switchCfg.MnemonicDelivery = "email"
-		} else {
-			switchCfg.MnemonicDelivery = "physical"
+		// Legacy delivery instructions (still useful as fallback)
+		switchCfg.VaultRepoURL = promptLine(reader, "Vault git repo URL (optional, leave empty if using package): ")
+		if switchCfg.VaultPackageLocation == "" {
+			fmt.Println("Custom delivery instructions (free text, e.g., 'Contact John at 555-1234")
+			fmt.Println("who has a USB copy' or 'Download from https://...')")
+			switchCfg.DeliveryInstructions = promptLine(reader, "Instructions (leave empty for default): ")
 		}
 
-		// Physical location (needed for both modes as fallback reference)
+		// Store the switch payload
 		fmt.Println()
-		fmt.Println("-- Physical Mnemonic Location --")
-		fmt.Println("Where is the physical mnemonic backup stored?")
-		switchCfg.PassphraseLocation = promptLine(reader, "Location (e.g., 'sealed envelope in home safe'): ")
 
-		// Store the switch payload (mnemonic for v2, passphrase for v1)
-		fmt.Println()
+		// Check if sealed payload exists (created during init)
+		sealedPayloadPath := filepath.Join(appDir, "sealed-payload.age")
 		if vault.IsV2Vault(cfg.VaultDir) {
-			fmt.Println("Enter the 8 mnemonic words to store in the switch payload.")
-			fmt.Println("These will be sent to recipients if the switch triggers.")
-			fmt.Fprint(os.Stdout, "Enter 8 mnemonic words (space-separated): ")
-			var words []string
-			for i := 0; i < 8; i++ {
-				var w string
-				if _, err := fmt.Scan(&w); err != nil {
-					return fmt.Errorf("reading mnemonic word %d: %w", i+1, err)
+			if _, err := os.Stat(sealedPayloadPath); err == nil {
+				// Sealed payload mode (v3)
+				sealedPayload, err := os.ReadFile(sealedPayloadPath)
+				if err != nil {
+					return fmt.Errorf("reading sealed payload: %w", err)
 				}
-				words = append(words, w)
-			}
 
-			// Verify mnemonic works
-			header, err := vault.LoadHeader(cfg.VaultDir)
-			if err != nil {
-				return fmt.Errorf("loading vault header: %w", err)
-			}
-			mk, _, err := header.OpenWithMnemonic(words)
-			if err != nil {
-				return fmt.Errorf("invalid mnemonic: %w", err)
-			}
-			crypto.ZeroBytes(mk)
+				sealedBase64 := crypto.EncodeSealedPayload(sealedPayload)
+				if err := deadswitch.StoreSwitchSealedPayload(appDir, sealedBase64); err != nil {
+					return err
+				}
 
-			if err := deadswitch.StoreSwitchMnemonic(appDir, words); err != nil {
-				return err
+				fmt.Println("Sealed payload loaded from init.")
+				fmt.Println("The DMS will deliver this sealed payload to recipients when triggered.")
+				fmt.Println("Recipients will need the physical card with the recipient passphrase to decrypt it.")
+			} else {
+				// Fallback: mnemonic mode (v2)
+				fmt.Println("No sealed payload found. Falling back to mnemonic mode.")
+				fmt.Println("(Run 'kawarimi init' to generate a sealed payload for the new architecture.)")
+				fmt.Println()
+
+				// Mnemonic delivery mode
+				fmt.Println("-- Mnemonic Delivery --")
+				fmt.Println("How should the 8 mnemonic words be delivered to the receiver?")
+				fmt.Println("  1) email    - Include words directly in the notification email")
+				fmt.Println("  2) physical - Reference a physical location (sealed envelope, safe)")
+				modeStr := promptLine(reader, "Mode [physical]: ")
+				if strings.HasPrefix(strings.ToLower(modeStr), "e") || modeStr == "1" {
+					switchCfg.MnemonicDelivery = "email"
+				} else {
+					switchCfg.MnemonicDelivery = "physical"
+				}
+
+				// Physical location
+				fmt.Println()
+				fmt.Println("Where is the physical mnemonic backup stored?")
+				switchCfg.PassphraseLocation = promptLine(reader, "Location (e.g., 'sealed envelope in home safe'): ")
+
+				fmt.Println("Enter the 8 mnemonic words to store in the switch payload.")
+				fmt.Println("These will be sent to recipients if the switch triggers.")
+				fmt.Fprint(os.Stdout, "Enter 8 mnemonic words (space-separated): ")
+				var words []string
+				for i := 0; i < 8; i++ {
+					var w string
+					if _, err := fmt.Scan(&w); err != nil {
+						return fmt.Errorf("reading mnemonic word %d: %w", i+1, err)
+					}
+					words = append(words, w)
+				}
+
+				// Verify mnemonic works
+				header, err := vault.LoadHeader(cfg.VaultDir)
+				if err != nil {
+					return fmt.Errorf("loading vault header: %w", err)
+				}
+				mk, _, err := header.OpenWithMnemonic(words)
+				if err != nil {
+					return fmt.Errorf("invalid mnemonic: %w", err)
+				}
+				crypto.ZeroBytes(mk)
+
+				if err := deadswitch.StoreSwitchMnemonic(appDir, words); err != nil {
+					return err
+				}
 			}
 		} else {
 			fmt.Println("The vault passphrase is needed to set up the local (systemd) switch.")
@@ -229,18 +258,47 @@ var switchSetupCmd = &cobra.Command{
 
 		// Install GitHub Actions workflow
 		fmt.Println()
-		fmt.Println("Installing GitHub Actions workflow...")
-		if err := deadswitch.InstallGitHubWorkflow(cfg.VaultDir, switchCfg); err != nil {
-			return err
+		useSealedMode := false
+		if _, err := os.Stat(sealedPayloadPath); err == nil {
+			useSealedMode = true
 		}
-		fmt.Println("Created .github/workflows/deadman.yml in vault directory.")
-		fmt.Println()
-		fmt.Println("IMPORTANT: Configure these GitHub repo secrets:")
-		fmt.Println("  SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD")
-		fmt.Println("  USER_EMAIL, RECIPIENT_EMAILS")
-		fmt.Println("  PHYSICAL_PASSPHRASE_LOCATION")
-		if switchCfg.TelegramBotToken != "" {
-			fmt.Println("  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
+
+		if useSealedMode {
+			// Generate DMS workflow for a standalone DMS repo
+			dmsOutputDir := filepath.Join(appDir, "dms-workflow")
+			if err := deadswitch.GenerateGitHubDMSWorkflowFile(dmsOutputDir, switchCfg); err != nil {
+				return err
+			}
+			fmt.Printf("GitHub Actions DMS workflow generated at:\n  %s\n", filepath.Join(dmsOutputDir, ".github", "workflows", "deadman.yml"))
+			fmt.Println()
+			fmt.Println("Create a SEPARATE GitHub repo for the DMS (not the vault storage repo!).")
+			fmt.Println("Copy the workflow file and configure these repo secrets:")
+			fmt.Println("  SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD")
+			fmt.Println("  USER_EMAIL, RECIPIENT_EMAILS")
+			fmt.Println("  SEALED_PAYLOAD (the base64 sealed payload)")
+			fmt.Println("  VAULT_PACKAGE_LOCATION (where recipients download the vault)")
+			if switchCfg.TelegramBotToken != "" {
+				fmt.Println("  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
+			}
+			fmt.Println()
+			fmt.Println("The sealed payload value to set as a secret:")
+			sealedPayload, _ := os.ReadFile(sealedPayloadPath)
+			fmt.Printf("  %s\n", crypto.EncodeSealedPayload(sealedPayload))
+		} else {
+			// Legacy: install workflow in vault repo
+			fmt.Println("Installing GitHub Actions workflow...")
+			if err := deadswitch.InstallGitHubWorkflow(cfg.VaultDir, switchCfg); err != nil {
+				return err
+			}
+			fmt.Println("Created .github/workflows/deadman.yml in vault directory.")
+			fmt.Println()
+			fmt.Println("IMPORTANT: Configure these GitHub repo secrets:")
+			fmt.Println("  SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD")
+			fmt.Println("  USER_EMAIL, RECIPIENT_EMAILS")
+			fmt.Println("  PHYSICAL_PASSPHRASE_LOCATION")
+			if switchCfg.TelegramBotToken != "" {
+				fmt.Println("  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
+			}
 		}
 
 		// Install systemd timer
