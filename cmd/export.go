@@ -85,13 +85,11 @@ func exportWithSealedPayload() (*vault.Vault, error) {
 		return nil, fmt.Errorf("invalid sealed payload: %w", err)
 	}
 
-	// Prompt for recipient passphrase
-	fmt.Fprint(os.Stderr, "Enter recipient passphrase (from physical card): ")
-	passphrase, err := reader.ReadString('\n')
+	// Prompt for recipient passphrase (echo suppressed to prevent shoulder surfing)
+	passphrase, err := crypto.PromptPassphrase("Enter recipient passphrase (from physical card): ")
 	if err != nil {
 		return nil, fmt.Errorf("reading passphrase: %w", err)
 	}
-	passphrase = strings.TrimSpace(passphrase)
 
 	// Unseal to recover mnemonic entropy
 	fmt.Fprintln(os.Stderr, "Decrypting sealed payload...")
