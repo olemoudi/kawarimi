@@ -83,8 +83,8 @@ jobs:
 }
 
 // GenerateGitHubDMSWorkflow returns a GitHub Actions workflow YAML for a standalone DMS repo.
-// This workflow delivers a sealed payload that can only be decrypted with the recipient passphrase.
-// The DMS repo is separate from the vault storage.
+// V4: This workflow delivers the DMS key. The sealed payload is in the vault package itself.
+// Recipients combine the DMS key with their recipient passphrase to decrypt.
 func GenerateGitHubDMSWorkflow(cfg *SwitchConfig) string {
 	return fmt.Sprintf(`name: Dead Man's Switch
 on:
@@ -130,7 +130,7 @@ jobs:
 
             If you don't check in by day %d, your family will be notified.
 
-      - name: Deliver sealed payload to recipients
+      - name: Deliver DMS key to recipients
         if: steps.checkin.outputs.days_since >= %d
         uses: dawidd6/action-send-mail@v3
         with:
@@ -155,9 +155,9 @@ jobs:
 
             3. Run: ./kawarimi export --sealed ./decrypted/
 
-            4. When prompted, paste this sealed payload:
+            4. When prompted, paste this DMS KEY:
 
-               ${{ secrets.SEALED_PAYLOAD }}
+               ${{ secrets.DMS_KEY }}
 
             5. Enter the RECIPIENT PASSPHRASE from the physical card
                given to you by the vault owner.

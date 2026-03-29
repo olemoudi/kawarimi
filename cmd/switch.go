@@ -168,11 +168,28 @@ var switchSetupCmd = &cobra.Command{
 		// Store the switch payload
 		fmt.Println()
 
-		// Check if sealed payload exists (created during init)
+		// Check for DMS key (V4, created during init)
+		dmsKeyPath := filepath.Join(appDir, "dms-key")
+		// Also check legacy sealed payload path for backward compat
 		sealedPayloadPath := filepath.Join(appDir, "sealed-payload.age")
+
 		if vault.IsV2Vault(cfg.VaultDir) {
-			if _, err := os.Stat(sealedPayloadPath); err == nil {
-				// Sealed payload mode (v3)
+			if _, err := os.Stat(dmsKeyPath); err == nil {
+				// V4: DMS key mode
+				dmsKeyBase64, err := os.ReadFile(dmsKeyPath)
+				if err != nil {
+					return fmt.Errorf("reading DMS key: %w", err)
+				}
+
+				if err := deadswitch.StoreSwitchDMSKey(appDir, strings.TrimSpace(string(dmsKeyBase64))); err != nil {
+					return err
+				}
+
+				fmt.Println("DMS key loaded from init.")
+				fmt.Println("The DMS will deliver this key to recipients when triggered.")
+				fmt.Println("Recipients will also need the physical card with the recipient passphrase to decrypt.")
+			} else if _, err := os.Stat(sealedPayloadPath); err == nil {
+				// V3: Sealed payload mode (legacy)
 				sealedPayload, err := os.ReadFile(sealedPayloadPath)
 				if err != nil {
 					return fmt.Errorf("reading sealed payload: %w", err)
@@ -183,13 +200,13 @@ var switchSetupCmd = &cobra.Command{
 					return err
 				}
 
-				fmt.Println("Sealed payload loaded from init.")
+				fmt.Println("Sealed payload loaded from init (V3 legacy mode).")
 				fmt.Println("The DMS will deliver this sealed payload to recipients when triggered.")
 				fmt.Println("Recipients will need the physical card with the recipient passphrase to decrypt it.")
 			} else {
 				// Fallback: mnemonic mode (v2)
-				fmt.Println("No sealed payload found. Falling back to mnemonic mode.")
-				fmt.Println("(Run 'kawarimi init' to generate a sealed payload for the new architecture.)")
+				fmt.Println("No DMS key or sealed payload found. Falling back to mnemonic mode.")
+				fmt.Println("(Run 'kawarimi init' to generate a DMS key for the new architecture.)")
 				fmt.Println()
 
 				// Mnemonic delivery mode
@@ -258,13 +275,40 @@ var switchSetupCmd = &cobra.Command{
 
 		// Install GitHub Actions workflow
 		fmt.Println()
+		useDMSKeyMode := false
+		if _, err := os.Stat(dmsKeyPath); err == nil {
+			useDMSKeyMode = true
+		}
 		useSealedMode := false
-		if _, err := os.Stat(sealedPayloadPath); err == nil {
-			useSealedMode = true
+		if !useDMSKeyMode {
+			if _, err := os.Stat(sealedPayloadPath); err == nil {
+				useSealedMode = true
+			}
 		}
 
-		if useSealedMode {
-			// Generate DMS workflow for a standalone DMS repo
+		if useDMSKeyMode {
+			// V4: Generate DMS workflow with DMS key
+			dmsOutputDir := filepath.Join(appDir, "dms-workflow")
+			if err := deadswitch.GenerateGitHubDMSWorkflowFile(dmsOutputDir, switchCfg); err != nil {
+				return err
+			}
+			fmt.Printf("GitHub Actions DMS workflow generated at:\n  %s\n", filepath.Join(dmsOutputDir, ".github", "workflows", "deadman.yml"))
+			fmt.Println()
+			fmt.Println("Create a SEPARATE GitHub repo for the DMS (not the vault storage repo!).")
+			fmt.Println("Copy the workflow file and configure these repo secrets:")
+			fmt.Println("  SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD")
+			fmt.Println("  USER_EMAIL, RECIPIENT_EMAILS")
+			fmt.Println("  DMS_KEY (the base64-encoded DMS key)")
+			fmt.Println("  VAULT_PACKAGE_LOCATION (where recipients download the vault)")
+			if switchCfg.TelegramBotToken != "" {
+				fmt.Println("  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
+			}
+			fmt.Println()
+			fmt.Println("The DMS key value to set as a secret:")
+			dmsKeyData, _ := os.ReadFile(dmsKeyPath)
+			fmt.Printf("  %s\n", strings.TrimSpace(string(dmsKeyData)))
+		} else if useSealedMode {
+			// V3 legacy: Generate DMS workflow with sealed payload
 			dmsOutputDir := filepath.Join(appDir, "dms-workflow")
 			if err := deadswitch.GenerateGitHubDMSWorkflowFile(dmsOutputDir, switchCfg); err != nil {
 				return err

@@ -14,6 +14,8 @@ const (
 	PackageVaultDir = "vault"
 	// PackageInstructionsFile is the instructions file inside the zip.
 	PackageInstructionsFile = "INSTRUCTIONS.md"
+	// SealedPayloadFile is the sealed payload file stored in the vault directory (V4).
+	SealedPayloadFile = "sealed_payload.age"
 )
 
 // BuildPackage creates a distributable vault package (zip) containing:
@@ -242,8 +244,10 @@ func generatePackageInstructions() string {
 This package contains an encrypted information vault. To decrypt it,
 you need TWO things:
 
-1. The SEALED PAYLOAD — sent to you by email when the dead man's switch triggered
+1. The DMS KEY — sent to you by email when the dead man's switch triggered
 2. The RECIPIENT PASSPHRASE — printed on a physical card given to you by the vault owner
+
+The sealed payload is already included in this vault package.
 
 ## Step-by-Step Instructions
 
@@ -267,7 +271,7 @@ Run the kawarimi tool:
     (use the binary matching your computer)
 
 You will be prompted for:
-- The sealed payload (paste the base64 text from the email)
+- The DMS KEY (paste the base64 text from the email you received)
 - The recipient passphrase (from the physical card)
 
 ### 4. Access your files
@@ -280,7 +284,7 @@ The decrypted files will be in the ./decrypted/ directory:
 
 ## Troubleshooting
 
-- Make sure you paste the ENTIRE sealed payload from the email (it's a long base64 string)
+- Make sure you paste the ENTIRE DMS key from the email (it's a base64 string)
 - Type the passphrase exactly as printed on the card (case-sensitive)
 - If you have problems, try a different binary (e.g., the Mac binary on a Mac)
 `

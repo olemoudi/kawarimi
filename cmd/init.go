@@ -96,7 +96,13 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("saving config: %w", err)
 		}
 
-		// Generate recipient passphrase and sealed payload for DMS
+		// Generate DMS key and recipient passphrase for V4 key-split architecture
+		dmsKey, err := crypto.GenerateDMSKey()
+		if err != nil {
+			return fmt.Errorf("generating DMS key: %w", err)
+		}
+		defer crypto.ZeroBytes(dmsKey)
+
 		recipientPassphrase, err := crypto.GenerateRecipientPassphrase()
 		if err != nil {
 			return fmt.Errorf("generating recipient passphrase: %w", err)
@@ -107,16 +113,22 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("encoding mnemonic entropy: %w", err)
 		}
 
-		sealedPayload, err := crypto.SealMnemonic(mnemonicEntropy, recipientPassphrase)
+		sealedPayload, err := crypto.SealMnemonicV4(mnemonicEntropy, dmsKey, recipientPassphrase)
 		if err != nil {
 			return fmt.Errorf("sealing mnemonic: %w", err)
 		}
 		crypto.ZeroBytes(mnemonicEntropy)
 
-		// Save sealed payload for later use with switch setup
-		sealedPath := filepath.Join(appDir, "sealed-payload.age")
+		// Save sealed payload to vault directory (publicly downloadable)
+		sealedPath := filepath.Join(vaultDir, vault.SealedPayloadFile)
 		if err := os.WriteFile(sealedPath, sealedPayload, 0600); err != nil {
 			return fmt.Errorf("saving sealed payload: %w", err)
+		}
+
+		// Save DMS key to app directory for later use with switch setup
+		dmsKeyPath := filepath.Join(appDir, "dms-key")
+		if err := os.WriteFile(dmsKeyPath, []byte(crypto.EncodeDMSKey(dmsKey)), 0600); err != nil {
+			return fmt.Errorf("saving DMS key: %w", err)
 		}
 
 		// Display critical secrets
@@ -139,7 +151,7 @@ var initCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("  The mnemonic above is your personal backup.")
 		fmt.Println("  The recipient passphrase is what your recipients need")
-		fmt.Println("  (along with the sealed payload from the dead man's switch)")
+		fmt.Println("  (along with the DMS key from the dead man's switch email)")
 		fmt.Println("  to decrypt the vault.")
 		fmt.Println()
 		fmt.Println("========================================")
@@ -147,6 +159,7 @@ var initCmd = &cobra.Command{
 		fmt.Printf("Vault initialized at %s\n", v.Dir)
 		fmt.Printf("Device key saved to %s\n", deviceKeyPath)
 		fmt.Printf("Sealed payload saved to %s\n", sealedPath)
+		fmt.Printf("DMS key saved to %s\n", dmsKeyPath)
 		fmt.Printf("Config saved to ~/%s/%s\n", config.AppDir, config.ConfigFile)
 		fmt.Println()
 		fmt.Println("Next steps:")

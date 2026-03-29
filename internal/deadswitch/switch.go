@@ -218,6 +218,9 @@ func triggerFinalRelease(switchCfg *SwitchConfig, appDir string) error {
 	}
 
 	// Detect payload type by prefix
+	if strings.HasPrefix(payload, "DMSKEY:") {
+		return triggerFinalReleaseV4(switchCfg, payload)
+	}
 	if strings.HasPrefix(payload, "SEALED:") {
 		return triggerFinalReleaseV3(switchCfg, payload)
 	}
@@ -375,6 +378,56 @@ Do not share it beyond the intended recipients.
 	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
 }
 
+func triggerFinalReleaseV4(switchCfg *SwitchConfig, payload string) error {
+	dmsKeyBase64 := strings.TrimPrefix(payload, "DMSKEY:")
+
+	// Vault package location
+	locationSection := "1. Download the vault package:\n"
+	if switchCfg.VaultPackageLocation != "" {
+		locationSection += "   " + strings.ReplaceAll(switchCfg.VaultPackageLocation, "\n", "\n   ")
+	} else if switchCfg.DeliveryInstructions != "" {
+		locationSection += "   " + strings.ReplaceAll(switchCfg.DeliveryInstructions, "\n", "\n   ")
+	} else if switchCfg.VaultRepoURL != "" {
+		locationSection += fmt.Sprintf("   Git repository: %s\n   Run: git clone %s", switchCfg.VaultRepoURL, switchCfg.VaultRepoURL)
+	} else {
+		locationSection += "   Check with family for the vault package location."
+	}
+
+	subject := "Important: Access Information Vault"
+	body := fmt.Sprintf(`This is an automated message from the Kawarimi information vault.
+
+The vault owner has not checked in for an extended period.
+
+HOW TO ACCESS THE VAULT:
+
+%s
+
+2. Extract the vault package (zip file).
+
+3. Find the kawarimi program for your computer:
+   - kawarimi-linux-amd64     (Linux)
+   - kawarimi-darwin-arm64    (Mac with Apple Silicon)
+   - kawarimi-windows-amd64.exe (Windows)
+
+4. Open a terminal/command prompt and run:
+   ./kawarimi export --sealed ./decrypted/
+
+5. When prompted, paste this DMS KEY:
+
+%s
+
+6. When prompted, enter the RECIPIENT PASSPHRASE from the
+   physical card given to you by the vault owner.
+
+7. Your decrypted files will be in the ./decrypted/ directory.
+
+IMPORTANT: Keep the recipient passphrase card secure.
+Do not share it beyond the intended recipients.
+`, locationSection, dmsKeyBase64)
+
+	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
+}
+
 // DecryptSwitchPayload reads the vault passphrase from the switch payload.
 func DecryptSwitchPayload(appDir string) (string, error) {
 	identityPath := filepath.Join(appDir, "switch-identity.key")
@@ -404,6 +457,14 @@ func StoreSwitchMnemonic(appDir string, words []string) error {
 // recipient passphrase (which the DMS does not have).
 func StoreSwitchSealedPayload(appDir string, sealedPayloadBase64 string) error {
 	payload := "SEALED:" + sealedPayloadBase64
+	return StoreSwitchPayload(appDir, payload)
+}
+
+// StoreSwitchDMSKey encrypts and stores the DMS key for the switch (v4).
+// The DMS only stores this key, not the sealed payload. When triggered, the key
+// is sent to recipients who combine it with their passphrase to unseal the vault.
+func StoreSwitchDMSKey(appDir string, dmsKeyBase64 string) error {
+	payload := "DMSKEY:" + dmsKeyBase64
 	return StoreSwitchPayload(appDir, payload)
 }
 
