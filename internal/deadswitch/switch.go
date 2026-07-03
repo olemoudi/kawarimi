@@ -228,6 +228,9 @@ func triggerFinalRelease(switchCfg *SwitchConfig, appDir string) error {
 	}
 
 	// Detect payload type by prefix
+	if strings.HasPrefix(payload, "CLOUDONLY:") {
+		return triggerFinalReleaseCloudOnly(switchCfg)
+	}
 	if strings.HasPrefix(payload, "DMSKEY:") {
 		return triggerFinalReleaseV4(switchCfg, payload)
 	}
@@ -388,6 +391,19 @@ Do not share it beyond the intended recipients.
 	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
 }
 
+// triggerFinalReleaseCloudOnly runs when this machine reaches the final stage but
+// holds no DMS key. It alerts the owner rather than releasing (the cloud does that).
+func triggerFinalReleaseCloudOnly(switchCfg *SwitchConfig) error {
+	subject := "Kawarimi: final stage reached (cloud DMS will release)"
+	body := "This machine reached the final dead man's switch stage, but it is configured\n" +
+		"cloud-only and holds no DMS key, so it will not deliver anything itself. The\n" +
+		"GitHub Actions dead man's switch is responsible for delivering the key to your\n" +
+		"recipients.\n\n" +
+		"If you are alive and seeing this, run 'kawarimi checkin'.\n" +
+		"If the cloud switch might be misconfigured, run 'kawarimi switch verify'."
+	return SendEmail(switchCfg, []string{switchCfg.UserEmail}, subject, body)
+}
+
 func triggerFinalReleaseV4(switchCfg *SwitchConfig, payload string) error {
 	dmsKeyBase64 := strings.TrimPrefix(payload, "DMSKEY:")
 
@@ -446,6 +462,22 @@ func StoreSwitchSealedPayload(appDir string, sealedPayloadBase64 string) error {
 func StoreSwitchDMSKey(appDir string, dmsKeyBase64 string) error {
 	payload := "DMSKEY:" + dmsKeyBase64
 	return StoreSwitchPayload(appDir, payload)
+}
+
+// StoreSwitchCloudOnly stores a marker instead of the DMS key. In this mode the
+// local machine holds no key and never performs the final release — that is left to
+// the cloud (GitHub Actions) — so a compromise of this machine cannot yield the key.
+func StoreSwitchCloudOnly(appDir string) error {
+	return StoreSwitchPayload(appDir, "CLOUDONLY:")
+}
+
+// SwitchIsCloudOnly reports whether the switch is configured for cloud-only release.
+func SwitchIsCloudOnly(appDir string) bool {
+	payload, err := DecryptSwitchPayload(appDir)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(payload, "CLOUDONLY:")
 }
 
 // StoreSwitchPayload encrypts and stores the vault passphrase for the switch.

@@ -191,16 +191,30 @@ var switchSetupCmd = &cobra.Command{
 			if _, err := os.Stat(dmsKeyPath); err != nil {
 				return fmt.Errorf("no DMS key found — run 'kawarimi switch rekey' first to generate V4 switch material")
 			}
-			dmsKeyBase64, err := os.ReadFile(dmsKeyPath)
-			if err != nil {
-				return fmt.Errorf("reading DMS key: %w", err)
+
+			fmt.Println()
+			fmt.Println("-- Final release --")
+			fmt.Println("The cloud (GitHub Actions) delivers the key after you die — that is the real")
+			fmt.Println("post-mortem trigger. Storing the key on THIS machine as well only adds attack")
+			fmt.Println("surface: a compromise here plus a recipient card could open the vault while")
+			fmt.Println("you are alive.")
+			ans := promptLine(reader, "Also allow final release from THIS machine? [y/N]: ")
+			if strings.HasPrefix(strings.ToLower(ans), "y") {
+				dmsKeyBase64, err := os.ReadFile(dmsKeyPath)
+				if err != nil {
+					return fmt.Errorf("reading DMS key: %w", err)
+				}
+				if err := deadswitch.StoreSwitchDMSKey(appDir, strings.TrimSpace(string(dmsKeyBase64))); err != nil {
+					return err
+				}
+				fmt.Println("This machine will also deliver the key. The key is stored locally, so protect")
+				fmt.Println("this machine (full-disk encryption strongly recommended).")
+			} else {
+				if err := deadswitch.StoreSwitchCloudOnly(appDir); err != nil {
+					return err
+				}
+				fmt.Println("Cloud-only: this machine holds no DMS key; the cloud delivers it.")
 			}
-			if err := deadswitch.StoreSwitchDMSKey(appDir, strings.TrimSpace(string(dmsKeyBase64))); err != nil {
-				return err
-			}
-			fmt.Println("DMS key loaded.")
-			fmt.Println("The DMS delivers this key to recipients when triggered; they also need the")
-			fmt.Println("physical card with the recipient passphrase to decrypt.")
 		} else {
 			fmt.Println("The vault passphrase is needed to set up the local (systemd) switch.")
 			passphrase, err := crypto.PromptPassphrase("Enter vault passphrase: ")
@@ -433,7 +447,29 @@ func runSwitchSeed(reader *bufio.Reader, cfg *config.Config, switchCfg *deadswit
 	fmt.Println()
 	fmt.Println("Enable the GitHub Actions workflow in the repo, then confirm with:")
 	fmt.Println("  kawarimi switch verify")
+
+	if err == nil && deadswitch.SwitchIsCloudOnly(appDir) {
+		offerDeleteLocalDMSKey(reader, appDir)
+	}
 	return nil
+}
+
+// offerDeleteLocalDMSKey removes the plaintext ~/.kawarimi/dms-key after the owner
+// confirms the GitHub secret is set, so a compromise of this machine cannot yield it.
+// Only meaningful in cloud-only mode (where switch-payload.age holds no key).
+func offerDeleteLocalDMSKey(reader *bufio.Reader, appDir string) {
+	dmsKeyPath := filepath.Join(appDir, "dms-key")
+	if _, err := os.Stat(dmsKeyPath); err != nil {
+		return
+	}
+	fmt.Println()
+	fmt.Println("Cloud-only mode: the DMS key does not need to stay on this machine.")
+	ans := promptLine(reader, "Have you set the DMS_KEY secret in GitHub? Remove the local copy now? [y/N]: ")
+	if strings.HasPrefix(strings.ToLower(ans), "y") {
+		if err := os.Remove(dmsKeyPath); err == nil {
+			fmt.Println("Local DMS key removed (regenerate later with 'kawarimi switch rekey' if needed).")
+		}
+	}
 }
 
 var switchRekeyCmd = &cobra.Command{
@@ -501,10 +537,16 @@ Requires your 8 mnemonic words (paper backup) to re-seal; they are not stored.`,
 			return err
 		}
 
-		// Update the stored (encrypted) switch payload so the local systemd path
-		// also delivers the new key.
+		// Update the stored switch payload, preserving the machine's release mode:
+		// cloud-only machines keep holding no key.
+		cloudOnly := false
 		if deadswitch.IsSwitchConfigured(appDir) {
-			if err := deadswitch.StoreSwitchDMSKey(appDir, dmsKeyB64); err != nil {
+			if deadswitch.SwitchIsCloudOnly(appDir) {
+				cloudOnly = true
+				if err := deadswitch.StoreSwitchCloudOnly(appDir); err != nil {
+					return fmt.Errorf("updating stored switch payload: %w", err)
+				}
+			} else if err := deadswitch.StoreSwitchDMSKey(appDir, dmsKeyB64); err != nil {
 				return fmt.Errorf("updating stored switch payload: %w", err)
 			}
 		}
@@ -542,6 +584,10 @@ Requires your 8 mnemonic words (paper backup) to re-seal; they are not stored.`,
 		fmt.Println("  2. Run 'kawarimi package build' and re-upload it to VAULT_PACKAGE_LOCATION.")
 		fmt.Println("  3. Replace or destroy old package copies (USB, cloud) — they carry the old seal.")
 		fmt.Println("  4. Run 'kawarimi switch verify'.")
+
+		if cloudOnly {
+			offerDeleteLocalDMSKey(reader, appDir)
+		}
 		return nil
 	},
 }

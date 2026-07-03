@@ -126,6 +126,35 @@ func TestStoreSwitchPayloadAndDecrypt(t *testing.T) {
 	}
 }
 
+func TestStoreSwitchCloudOnly(t *testing.T) {
+	appDir := t.TempDir()
+
+	if err := StoreSwitchCloudOnly(appDir); err != nil {
+		t.Fatalf("StoreSwitchCloudOnly: %v", err)
+	}
+	if !SwitchIsCloudOnly(appDir) {
+		t.Error("expected cloud-only detection to be true")
+	}
+
+	// The stored cloud-only payload must not contain a DMS key.
+	payload, err := DecryptSwitchPayload(appDir)
+	if err != nil {
+		t.Fatalf("DecryptSwitchPayload: %v", err)
+	}
+	if payload != "CLOUDONLY:" {
+		t.Errorf("cloud-only payload = %q, want %q", payload, "CLOUDONLY:")
+	}
+
+	// A DMS-key payload is not cloud-only.
+	appDir2 := t.TempDir()
+	if err := StoreSwitchDMSKey(appDir2, "abc123"); err != nil {
+		t.Fatalf("StoreSwitchDMSKey: %v", err)
+	}
+	if SwitchIsCloudOnly(appDir2) {
+		t.Error("a DMS-key payload should not be reported as cloud-only")
+	}
+}
+
 func TestStoreSwitchMnemonicAndDecrypt(t *testing.T) {
 	appDir := t.TempDir()
 	words := []string{"abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract"}
