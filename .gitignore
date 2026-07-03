@@ -1,0 +1,12 @@
+# Built binary
+/kawarimi
+/kawarimi-*
+
+# Release / package artifacts
+/dist/
+*.zip
+
+# Test / coverage output
+*.out
+coverage.txt
+coverage.html

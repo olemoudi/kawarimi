@@ -1,0 +1,36 @@
+version: 2
+
+project_name: kawarimi
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      # windows/arm64 is not a recipient target
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/olemoudi/kawarimi/cmd.version={{ .Version }}
+    # Name the binaries kawarimi-<os>-<arch> so dist/ can be passed straight to
+    # `kawarimi package build --binaries dist/`.
+    binary: kawarimi-{{ .Os }}-{{ .Arch }}
+
+archives:
+  # Emit the raw binaries (no tarball wrapper) so they are directly usable both
+  # by recipients and as --binaries input.
+  - format: binary
+    name_template: "{{ .Binary }}"
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  draft: true
