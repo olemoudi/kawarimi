@@ -1,0 +1,109 @@
+name: Dead Man's Switch
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Daily at 9am UTC
+  workflow_dispatch: {}   # Allow manual trigger
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Check last check-in
+        id: checkin
+        run: |
+          if [ ! -f last_checkin ]; then
+            echo "status=missing" >> "$GITHUB_OUTPUT"
+            echo "days_since=-1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last=$(tr -d '[:space:]' < last_checkin)
+          last_epoch=$(date -d "$last" +%s 2>/dev/null || true)
+          if [ -z "$last_epoch" ]; then
+            echo "status=unparseable" >> "$GITHUB_OUTPUT"
+            echo "days_since=-1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          now_epoch=$(date +%s)
+          diff=$(( (now_epoch - last_epoch) / 86400 ))
+          echo "status=ok" >> "$GITHUB_OUTPUT"
+          echo "days_since=$diff" >> "$GITHUB_OUTPUT"
+          echo "Last check-in: $last ($diff days ago)"
+
+      - name: Alert owner of DMS misconfiguration
+        if: steps.checkin.outputs.status != 'ok'
+        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde  # v3.12.0
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Kawarimi: DEAD MAN'S SWITCH IS NOT ARMED"
+          to: ${{ secrets.USER_EMAIL }}
+          from: ${{ secrets.SMTP_USERNAME }}
+          body: |
+            Your Kawarimi dead man's switch is NOT armed.
+
+            The heartbeat file 'last_checkin' is ${{ steps.checkin.outputs.status }} in
+            the DMS repository, so the switch can never trigger and your recipients
+            would never be notified.
+
+            Fix it by running:  kawarimi switch seed
+
+            This message repeats daily until the switch is armed.
+
+      - name: Send warning to owner
+        if: steps.checkin.outputs.status == 'ok' && steps.checkin.outputs.days_since >= 14 && steps.checkin.outputs.days_since < 30
+        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde  # v3.12.0
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Kawarimi: Check-in overdue (${{ steps.checkin.outputs.days_since }} days)"
+          to: ${{ secrets.USER_EMAIL }}
+          from: ${{ secrets.SMTP_USERNAME }}
+          body: |
+            You haven't checked in for ${{ steps.checkin.outputs.days_since }} days.
+
+            Run 'kawarimi checkin' to reset the timer.
+
+            If you don't check in by day 30, your family will be notified.
+
+      - name: Deliver DMS key to recipients
+        if: steps.checkin.outputs.status == 'ok' && steps.checkin.outputs.days_since >= 30
+        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde  # v3.12.0
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Important: Access Information Vault"
+          to: ${{ secrets.RECIPIENT_EMAILS }}
+          from: ${{ secrets.SMTP_USERNAME }}
+          body: |
+            This is an automated message from the Kawarimi information vault.
+
+            The vault owner has not checked in for ${{ steps.checkin.outputs.days_since }} days.
+
+            HOW TO ACCESS THE VAULT:
+
+            1. Download the vault package from:
+               ${{ secrets.VAULT_PACKAGE_LOCATION }}
+
+            2. Extract the zip and find the kawarimi binary for your OS.
+
+            3. Run: ./kawarimi export --sealed ./decrypted/
+
+            4. When prompted, paste this DMS KEY:
+
+               ${{ secrets.DMS_KEY }}
+
+            5. Enter the RECIPIENT PASSPHRASE from the physical card
+               given to you by the vault owner.
+
+            6. Your decrypted files will be in ./decrypted/

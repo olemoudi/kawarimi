@@ -1,9 +1,11 @@
 package deadswitch
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"text/template"
 )
 
 // GenerateGitHubWorkflow returns the GitHub Actions workflow YAML for the dead man's switch.
@@ -82,39 +84,103 @@ jobs:
 `, cfg.Warning1Days, cfg.FinalDays, cfg.FinalDays, cfg.FinalDays)
 }
 
+// dmsWorkflowParams are the fields substituted into dmsWorkflowText.
+type dmsWorkflowParams struct {
+	Warning1Days int
+	FinalDays    int
+	Telegram     bool // include a Telegram owner-alert step
+}
+
+// dmsWorkflowTmpl renders the standalone DMS repo workflow. It uses [[ ]] delimiters
+// so that GitHub Actions ${{ }} expressions pass through untouched (no escaping), which
+// is what makes the previous fmt.Sprintf %-escaping bug class impossible to reintroduce.
+var dmsWorkflowTmpl = template.Must(
+	template.New("dms").Delims("[[", "]]").Parse(dmsWorkflowText),
+)
+
 // GenerateGitHubDMSWorkflow returns a GitHub Actions workflow YAML for a standalone DMS repo.
 // V4: This workflow delivers the DMS key. The sealed payload is in the vault package itself.
 // Recipients combine the DMS key with their recipient passphrase to decrypt.
+//
+// Fail semantics: if last_checkin is missing or unparseable the job alerts the OWNER and
+// never releases (fail-closed toward disclosure, fail-open toward owner alerting). The DMS
+// key is delivered only when a check-in was read successfully AND is older than FinalDays.
 func GenerateGitHubDMSWorkflow(cfg *SwitchConfig) string {
-	return fmt.Sprintf(`name: Dead Man's Switch
+	params := dmsWorkflowParams{
+		Warning1Days: cfg.Warning1Days,
+		FinalDays:    cfg.FinalDays,
+		Telegram:     cfg.TelegramBotToken != "",
+	}
+	var buf bytes.Buffer
+	if err := dmsWorkflowTmpl.Execute(&buf, params); err != nil {
+		// The template is a compile-time constant with known fields; execution cannot
+		// fail at runtime. Panicking here surfaces any future template edit mistake in tests.
+		panic(fmt.Sprintf("rendering DMS workflow: %v", err))
+	}
+	return buf.String()
+}
+
+const dmsWorkflowText = `name: Dead Man's Switch
 on:
   schedule:
     - cron: '0 9 * * *'  # Daily at 9am UTC
   workflow_dispatch: {}   # Allow manual trigger
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Check last check-in
         id: checkin
         run: |
           if [ ! -f last_checkin ]; then
-            echo "days_since=999" >> $GITHUB_OUTPUT
+            echo "status=missing" >> "$GITHUB_OUTPUT"
+            echo "days_since=-1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          last=$(cat last_checkin | tr -d '[:space:]')
-          last_epoch=$(date -d "$last" +%%%%s 2>/dev/null || date -j -f "%%%%Y-%%%%m-%%%%dT%%%%H:%%%%M:%%%%SZ" "$last" +%%%%s 2>/dev/null)
-          now_epoch=$(date +%%%%s)
+          last=$(tr -d '[:space:]' < last_checkin)
+          last_epoch=$(date -d "$last" +%s 2>/dev/null || true)
+          if [ -z "$last_epoch" ]; then
+            echo "status=unparseable" >> "$GITHUB_OUTPUT"
+            echo "days_since=-1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          now_epoch=$(date +%s)
           diff=$(( (now_epoch - last_epoch) / 86400 ))
-          echo "days_since=$diff" >> $GITHUB_OUTPUT
+          echo "status=ok" >> "$GITHUB_OUTPUT"
+          echo "days_since=$diff" >> "$GITHUB_OUTPUT"
           echo "Last check-in: $last ($diff days ago)"
 
+      - name: Alert owner of DMS misconfiguration
+        if: steps.checkin.outputs.status != 'ok'
+        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde  # v3.12.0
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Kawarimi: DEAD MAN'S SWITCH IS NOT ARMED"
+          to: ${{ secrets.USER_EMAIL }}
+          from: ${{ secrets.SMTP_USERNAME }}
+          body: |
+            Your Kawarimi dead man's switch is NOT armed.
+
+            The heartbeat file 'last_checkin' is ${{ steps.checkin.outputs.status }} in
+            the DMS repository, so the switch can never trigger and your recipients
+            would never be notified.
+
+            Fix it by running:  kawarimi switch seed
+
+            This message repeats daily until the switch is armed.
+
       - name: Send warning to owner
-        if: steps.checkin.outputs.days_since >= %d && steps.checkin.outputs.days_since < %d
-        uses: dawidd6/action-send-mail@v3
+        if: steps.checkin.outputs.status == 'ok' && steps.checkin.outputs.days_since >= [[.Warning1Days]] && steps.checkin.outputs.days_since < [[.FinalDays]]
+        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde  # v3.12.0
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
           server_port: 587
@@ -128,11 +194,23 @@ jobs:
 
             Run 'kawarimi checkin' to reset the timer.
 
-            If you don't check in by day %d, your family will be notified.
-
+            If you don't check in by day [[.FinalDays]], your family will be notified.
+[[if .Telegram]]
+      - name: Telegram alert to owner
+        if: steps.checkin.outputs.status != 'ok' || (steps.checkin.outputs.days_since >= [[.Warning1Days]] && steps.checkin.outputs.days_since < [[.FinalDays]])
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TG_STATUS: ${{ steps.checkin.outputs.status }}
+          TG_DAYS: ${{ steps.checkin.outputs.days_since }}
+        run: |
+          curl -sS --fail "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode chat_id="${TG_CHAT}" \
+            --data-urlencode "text=Kawarimi DMS needs attention (status=${TG_STATUS}, days=${TG_DAYS}). Run 'kawarimi checkin'."
+[[end]]
       - name: Deliver DMS key to recipients
-        if: steps.checkin.outputs.days_since >= %d
-        uses: dawidd6/action-send-mail@v3
+        if: steps.checkin.outputs.status == 'ok' && steps.checkin.outputs.days_since >= [[.FinalDays]]
+        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde  # v3.12.0
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
           server_port: 587
@@ -163,8 +241,7 @@ jobs:
                given to you by the vault owner.
 
             6. Your decrypted files will be in ./decrypted/
-`, cfg.Warning1Days, cfg.FinalDays, cfg.FinalDays, cfg.FinalDays)
-}
+`
 
 // InstallGitHubWorkflow writes the workflow file to the vault's .github/workflows/ directory.
 func InstallGitHubWorkflow(vaultDir string, cfg *SwitchConfig) error {
