@@ -661,6 +661,11 @@ func printVerifyReport(r *deadswitch.VerifyReport, switchCfg *deadswitch.SwitchC
 		fmt.Printf("%s Switch has already TRIGGERED — the DMS key may have been disclosed.\n", warn)
 	}
 
+	if r.LegacyMnemonicEmail {
+		fmt.Printf("%s Legacy payload emails the mnemonic words outright — anyone reading that inbox\n", warn)
+		fmt.Println("       could open the vault. Run 'kawarimi switch rekey' to move to V4.")
+	}
+
 	fmt.Println()
 	fmt.Println("Not checkable from here: the GitHub repo secrets (DMS_KEY, SMTP_*, RECIPIENT_EMAILS,")
 	fmt.Println("VAULT_PACKAGE_LOCATION) and real email delivery. Confirm those in the repo settings")

@@ -2,7 +2,6 @@ package screens
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -25,13 +24,13 @@ type UnlockErrorMsg struct{ Err error }
 
 // Unlock is the password entry screen.
 type Unlock struct {
-	input    textinput.Model
-	err      string
-	loading  bool
-	cfg      *config.Config
-	hasV2    bool
-	width    int
-	height   int
+	input   textinput.Model
+	err     string
+	loading bool
+	cfg     *config.Config
+	hasV2   bool
+	width   int
+	height  int
 }
 
 // NewUnlock creates the unlock screen.
@@ -234,14 +233,4 @@ func (u Unlock) View() string {
 		return lipgloss.Place(u.width, u.height, lipgloss.Center, lipgloss.Center, box)
 	}
 	return box
-}
-
-// HasDeviceKey checks if a device key file exists.
-func HasDeviceKey() bool {
-	appDir, err := config.AppDirPath()
-	if err != nil {
-		return false
-	}
-	_, err = os.Stat(filepath.Join(appDir, "device.key"))
-	return err == nil
 }

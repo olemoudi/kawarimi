@@ -133,7 +133,7 @@ func Evaluate(targets CheckinTargets, switchCfg *SwitchConfig, appDir string) er
 	if switchCfg.TelegramBotToken != "" && switchCfg.TelegramChatID != "" {
 		lastCheckin, err := ReadLastCheckin(vaultDir)
 		if err == nil {
-			alive, err := CheckForAlive(switchCfg.TelegramBotToken, switchCfg.TelegramChatID, lastCheckin)
+			alive, err := CheckForAlive(switchCfg.TelegramBotToken, switchCfg.TelegramChatID, lastCheckin, appDir)
 			if err == nil && alive {
 				autoCheckin(targets, "Telegram")
 			}

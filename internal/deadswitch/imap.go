@@ -50,9 +50,16 @@ func CheckIMAPForAlive(cfg *SwitchConfig, since time.Time) (bool, error) {
 		return false, fmt.Errorf("IMAP select: %w", err)
 	}
 
-	// SEARCH for emails with subject ALIVE since the last check-in
+	// SEARCH for emails with subject ALIVE since the last check-in, from the
+	// owner's own address. FROM only matches the header, which is spoofable, but a
+	// spoofed ALIVE merely delays release (erring toward not disclosing); the
+	// filter stops anyone who can just drop an ALIVE email into the inbox from
+	// suppressing the switch.
 	sinceStr := since.Format("02-Jan-2006")
 	searchCmd := fmt.Sprintf("SEARCH SINCE %s SUBJECT ALIVE", sinceStr)
+	if cfg.UserEmail != "" {
+		searchCmd = fmt.Sprintf("SEARCH SINCE %s FROM %q SUBJECT ALIVE", sinceStr, cfg.UserEmail)
+	}
 	searchResult, err := imapCommandWithResult(conn, reader, "A003", searchCmd)
 	if err != nil {
 		// Non-fatal — logout and return false

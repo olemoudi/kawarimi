@@ -72,7 +72,7 @@ func TestCheckForAlive(t *testing.T) {
 	telegramAPIBaseOverride = server.URL + "/bot"
 
 	// Should find /alive
-	found, err := CheckForAlive("token", "12345", now.Add(-2*time.Hour))
+	found, err := CheckForAlive("token", "12345", now.Add(-2*time.Hour), t.TempDir())
 	if err != nil {
 		t.Fatalf("CheckForAlive: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestCheckForAlive(t *testing.T) {
 	}
 
 	// Should not find /alive from wrong chat
-	found, err = CheckForAlive("token", "99999", now.Add(-2*time.Hour))
+	found, err = CheckForAlive("token", "99999", now.Add(-2*time.Hour), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,12 +90,44 @@ func TestCheckForAlive(t *testing.T) {
 	}
 
 	// Should not find /alive before the since time
-	found, err = CheckForAlive("token", "12345", now.Add(1*time.Hour))
+	found, err = CheckForAlive("token", "12345", now.Add(1*time.Hour), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if found {
 		t.Error("should not find /alive after since time")
+	}
+}
+
+// TestCheckForAliveTracksOffset verifies that the last processed update_id is
+// persisted and sent as the getUpdates offset on the next call.
+func TestCheckForAliveTracksOffset(t *testing.T) {
+	now := time.Now()
+	updates := []telegramUpdate{
+		{UpdateID: 42, Message: &telegramMessage{Date: now.Unix(), Text: "/alive", Chat: telegramChat{ID: 12345}}},
+	}
+
+	var gotOffset string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		gotOffset = r.FormValue("offset")
+		result, _ := json.Marshal(updates)
+		json.NewEncoder(w).Encode(telegramResponse{OK: true, Result: result})
+	}))
+	defer server.Close()
+	defer func() { telegramAPIBaseOverride = "" }()
+	telegramAPIBaseOverride = server.URL + "/bot"
+
+	appDir := t.TempDir()
+	if _, err := CheckForAlive("token", "12345", now.Add(-2*time.Hour), appDir); err != nil {
+		t.Fatalf("first CheckForAlive: %v", err)
+	}
+	// Second call should send offset = maxID+1 = 43.
+	if _, err := CheckForAlive("token", "12345", now.Add(-2*time.Hour), appDir); err != nil {
+		t.Fatalf("second CheckForAlive: %v", err)
+	}
+	if gotOffset != "43" {
+		t.Errorf("expected offset=43 on the second call, got %q", gotOffset)
 	}
 }
 

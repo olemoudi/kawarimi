@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -32,16 +34,16 @@ type telegramResponse struct {
 
 // telegramUpdate represents a Telegram update (message, etc).
 type telegramUpdate struct {
-	UpdateID int             `json:"update_id"`
+	UpdateID int              `json:"update_id"`
 	Message  *telegramMessage `json:"message,omitempty"`
 }
 
 type telegramMessage struct {
-	MessageID int          `json:"message_id"`
+	MessageID int           `json:"message_id"`
 	From      *telegramUser `json:"from,omitempty"`
-	Chat      telegramChat `json:"chat"`
-	Date      int64        `json:"date"`
-	Text      string       `json:"text"`
+	Chat      telegramChat  `json:"chat"`
+	Date      int64         `json:"date"`
+	Text      string        `json:"text"`
 }
 
 type telegramUser struct {
@@ -78,15 +80,20 @@ func SendTelegramMessage(token, chatID, text string) error {
 	return nil
 }
 
-// CheckForAlive checks recent Telegram messages for an /alive command.
-// Returns true if an /alive message from the expected chat was received since `since`.
-func CheckForAlive(token, chatID string, since time.Time) (bool, error) {
+// CheckForAlive checks recent Telegram messages for an /alive command. Returns true
+// if an /alive message from the expected chat was received since `since`. It tracks
+// the last processed update_id (in appDir/telegram-offset) and passes it as the
+// getUpdates offset, so a busy bot cannot bury an /alive beyond the fetch window.
+func CheckForAlive(token, chatID string, since time.Time, appDir string) (bool, error) {
 	apiURL := telegramAPI() + token + "/getUpdates"
 
-	resp, err := http.PostForm(apiURL, url.Values{
-		"timeout": {"0"},
-		"limit":   {"100"},
-	})
+	offset := readTelegramOffset(appDir)
+	vals := url.Values{"timeout": {"0"}, "limit": {"100"}}
+	if offset > 0 {
+		vals.Set("offset", strconv.Itoa(offset))
+	}
+
+	resp, err := http.PostForm(apiURL, vals)
 	if err != nil {
 		return false, fmt.Errorf("telegram getUpdates: %w", err)
 	}
@@ -108,7 +115,12 @@ func CheckForAlive(token, chatID string, since time.Time) (bool, error) {
 
 	expectedChatID, _ := strconv.ParseInt(chatID, 10, 64)
 
+	alive := false
+	maxID := offset - 1
 	for _, u := range updates {
+		if u.UpdateID > maxID {
+			maxID = u.UpdateID
+		}
 		if u.Message == nil {
 			continue
 		}
@@ -121,10 +133,33 @@ func CheckForAlive(token, chatID string, since time.Time) (bool, error) {
 		}
 		text := strings.TrimSpace(strings.ToLower(u.Message.Text))
 		if text == "/alive" || text == "alive" {
-			return true, nil
+			alive = true
 		}
 	}
-	return false, nil
+
+	// Advance the offset past everything we just saw so the next call fetches only
+	// newer updates.
+	if len(updates) > 0 {
+		writeTelegramOffset(appDir, maxID+1)
+	}
+	return alive, nil
+}
+
+// readTelegramOffset returns the stored getUpdates offset, or 0 if none.
+func readTelegramOffset(appDir string) int {
+	data, err := os.ReadFile(filepath.Join(appDir, "telegram-offset"))
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func writeTelegramOffset(appDir string, offset int) {
+	_ = os.WriteFile(filepath.Join(appDir, "telegram-offset"), []byte(strconv.Itoa(offset)), 0600)
 }
 
 // ResolveChatID sends a test message and waits for the user to message the bot,

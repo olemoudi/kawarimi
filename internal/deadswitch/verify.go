@@ -31,9 +31,10 @@ type VerifyReport struct {
 	WorkflowPresent  bool
 	WorkflowUpToDate bool
 
-	Triggered          bool
-	SystemdTimerActive bool
-	FinalDaysRisky     bool // FinalDays >= githubScheduledDisableDays
+	Triggered           bool
+	SystemdTimerActive  bool
+	FinalDaysRisky      bool // FinalDays >= githubScheduledDisableDays
+	LegacyMnemonicEmail bool // stored payload emails the mnemonic outright (insecure)
 }
 
 // remoteStaleThreshold is how far the remote heartbeat may lag the local one
@@ -60,6 +61,13 @@ func Verify(targets CheckinTargets, switchCfg *SwitchConfig, appDir string) (*Ve
 	}
 
 	r.SystemdTimerActive = systemdTimerActive()
+
+	// A legacy V2 payload with email delivery mails the 8 mnemonic words outright.
+	if payload, perr := DecryptSwitchPayload(appDir); perr == nil {
+		if strings.HasPrefix(payload, "MNEMONIC:") && switchCfg.MnemonicDelivery == "email" {
+			r.LegacyMnemonicEmail = true
+		}
+	}
 
 	if r.DMSConfigured {
 		gs := gosync.NewGitSync(targets.DMSRepoDir, targets.DMSRemote, "")

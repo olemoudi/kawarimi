@@ -208,34 +208,3 @@ func exportWithMnemonic() (*vault.Vault, error) {
 
 	return v, nil
 }
-
-// exportStandalone opens a vault from a given directory (no config needed).
-// This is for the receiver who just has the vault files + binary.
-func exportStandalone(vaultDir string) (*vault.Vault, error) {
-	headerPath := filepath.Join(vaultDir, vault.HeaderFile)
-	if _, err := os.Stat(headerPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("no vault header found at %s", vaultDir)
-	}
-
-	header, err := vault.LoadHeader(vaultDir)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Fprint(os.Stderr, "Enter 8 mnemonic words (space-separated): ")
-	var words []string
-	for i := 0; i < 8; i++ {
-		var w string
-		if _, err := fmt.Scan(&w); err != nil {
-			return nil, fmt.Errorf("reading mnemonic word %d: %w", i+1, err)
-		}
-		words = append(words, w)
-	}
-
-	_, ageIdentity, err := header.OpenWithMnemonic(words)
-	if err != nil {
-		return nil, fmt.Errorf("unlocking vault: %w", err)
-	}
-
-	return vault.OpenV2(vaultDir, ageIdentity, header.AgeRecipient)
-}
