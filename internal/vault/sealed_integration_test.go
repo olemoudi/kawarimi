@@ -1,6 +1,7 @@
 package vault_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -429,6 +430,86 @@ func TestV4DMSPlusVaultNeedPassphrase(t *testing.T) {
 	_, err = crypto.UnsealMnemonicV4(sealed, dmsKey, "wrong passphrase words")
 	if err == nil {
 		t.Fatal("should not unseal with wrong passphrase")
+	}
+}
+
+// TestV4RekeyRoundTrip verifies the semantics `switch rekey` relies on: resealing
+// the same entropy under a new DMS key invalidates the old key while the unchanged
+// card passphrase keeps working, and the recovered entropy is identical so the vault
+// still opens.
+func TestV4RekeyRoundTrip(t *testing.T) {
+	tp := crypto.TestParams()
+	result, err := vault.NewHeader(vault.InitParams{
+		Password:          "test-password",
+		DeviceID:          "test-device",
+		MnemonicKDFParams: &tp,
+		OwnerKDFParams:    &tp,
+	})
+	if err != nil {
+		t.Fatalf("NewHeader: %v", err)
+	}
+	defer crypto.ZeroBytes(result.MasterKey)
+
+	passphrase, _ := crypto.GenerateRecipientPassphrase()
+	entropy, _ := crypto.DecodeMnemonic(result.MnemonicWords)
+
+	oldKey, _ := crypto.GenerateDMSKey() // key that leaked / was disclosed
+	newKey, _ := crypto.GenerateDMSKey()
+
+	// Rekey: reseal under the new key, passphrase unchanged (cards stay valid).
+	resealed, err := crypto.SealMnemonicV4(entropy, newKey, passphrase)
+	if err != nil {
+		t.Fatalf("reseal: %v", err)
+	}
+
+	if _, err := crypto.UnsealMnemonicV4(resealed, oldKey, passphrase); err == nil {
+		t.Fatal("old DMS key must not unseal the resealed payload")
+	}
+
+	recovered, err := crypto.UnsealMnemonicV4(resealed, newKey, passphrase)
+	if err != nil {
+		t.Fatalf("new key + unchanged passphrase should unseal: %v", err)
+	}
+	if !bytes.Equal(recovered, entropy) {
+		t.Fatal("recovered entropy differs after rekey — the vault would no longer open")
+	}
+}
+
+// TestV4RekeyRotatePassphrase verifies `switch rekey --rotate-passphrase`: both the
+// DMS key and the recipient passphrase change, so an old card no longer works.
+func TestV4RekeyRotatePassphrase(t *testing.T) {
+	tp := crypto.TestParams()
+	result, err := vault.NewHeader(vault.InitParams{
+		Password:          "test-password",
+		DeviceID:          "test-device",
+		MnemonicKDFParams: &tp,
+		OwnerKDFParams:    &tp,
+	})
+	if err != nil {
+		t.Fatalf("NewHeader: %v", err)
+	}
+	defer crypto.ZeroBytes(result.MasterKey)
+
+	entropy, _ := crypto.DecodeMnemonic(result.MnemonicWords)
+	oldPass, _ := crypto.GenerateRecipientPassphrase()
+	newKey, _ := crypto.GenerateDMSKey()
+	newPass, _ := crypto.GenerateRecipientPassphrase()
+
+	resealed, err := crypto.SealMnemonicV4(entropy, newKey, newPass)
+	if err != nil {
+		t.Fatalf("reseal: %v", err)
+	}
+
+	if _, err := crypto.UnsealMnemonicV4(resealed, newKey, oldPass); err == nil {
+		t.Fatal("old passphrase must not unseal after --rotate-passphrase")
+	}
+
+	recovered, err := crypto.UnsealMnemonicV4(resealed, newKey, newPass)
+	if err != nil {
+		t.Fatalf("new key + new passphrase should unseal: %v", err)
+	}
+	if !bytes.Equal(recovered, entropy) {
+		t.Fatal("recovered entropy differs after rotate-passphrase rekey")
 	}
 }
 

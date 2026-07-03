@@ -18,18 +18,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var switchSeedForce bool
+var (
+	switchSeedForce             bool
+	switchRekeyRotatePassphrase bool
+)
 
 func init() {
 	rootCmd.AddCommand(switchCmd)
 	switchCmd.AddCommand(switchSetupCmd)
 	switchCmd.AddCommand(switchSeedCmd)
 	switchCmd.AddCommand(switchVerifyCmd)
+	switchCmd.AddCommand(switchRekeyCmd)
 	switchCmd.AddCommand(switchTestCmd)
 	switchCmd.AddCommand(switchDisableCmd)
 	switchCmd.AddCommand(switchEvaluateCmd)
 
 	switchSeedCmd.Flags().BoolVar(&switchSeedForce, "force", false, "force-push the DMS repo (overwrites remote history; use to repair a diverged repo)")
+	switchRekeyCmd.Flags().BoolVar(&switchRekeyRotatePassphrase, "rotate-passphrase", false, "also generate a new recipient passphrase (requires re-printing and re-distributing the cards)")
 }
 
 var switchCmd = &cobra.Command{
@@ -178,89 +183,24 @@ var switchSetupCmd = &cobra.Command{
 
 		// Check for DMS key (V4, created during init)
 		dmsKeyPath := filepath.Join(appDir, "dms-key")
-		// Also check legacy sealed payload path for backward compat
-		sealedPayloadPath := filepath.Join(appDir, "sealed-payload.age")
 
 		if vault.IsV2Vault(cfg.VaultDir) {
-			if _, err := os.Stat(dmsKeyPath); err == nil {
-				// V4: DMS key mode
-				dmsKeyBase64, err := os.ReadFile(dmsKeyPath)
-				if err != nil {
-					return fmt.Errorf("reading DMS key: %w", err)
-				}
-
-				if err := deadswitch.StoreSwitchDMSKey(appDir, strings.TrimSpace(string(dmsKeyBase64))); err != nil {
-					return err
-				}
-
-				fmt.Println("DMS key loaded from init.")
-				fmt.Println("The DMS will deliver this key to recipients when triggered.")
-				fmt.Println("Recipients will also need the physical card with the recipient passphrase to decrypt.")
-			} else if _, err := os.Stat(sealedPayloadPath); err == nil {
-				// V3: Sealed payload mode (legacy)
-				sealedPayload, err := os.ReadFile(sealedPayloadPath)
-				if err != nil {
-					return fmt.Errorf("reading sealed payload: %w", err)
-				}
-
-				sealedBase64 := crypto.EncodeSealedPayload(sealedPayload)
-				if err := deadswitch.StoreSwitchSealedPayload(appDir, sealedBase64); err != nil {
-					return err
-				}
-
-				fmt.Println("Sealed payload loaded from init (V3 legacy mode).")
-				fmt.Println("The DMS will deliver this sealed payload to recipients when triggered.")
-				fmt.Println("Recipients will need the physical card with the recipient passphrase to decrypt it.")
-			} else {
-				// Fallback: mnemonic mode (v2)
-				fmt.Println("No DMS key or sealed payload found. Falling back to mnemonic mode.")
-				fmt.Println("(Run 'kawarimi init' to generate a DMS key for the new architecture.)")
-				fmt.Println()
-
-				// Mnemonic delivery mode
-				fmt.Println("-- Mnemonic Delivery --")
-				fmt.Println("How should the 8 mnemonic words be delivered to the receiver?")
-				fmt.Println("  1) email    - Include words directly in the notification email")
-				fmt.Println("  2) physical - Reference a physical location (sealed envelope, safe)")
-				modeStr := promptLine(reader, "Mode [physical]: ")
-				if strings.HasPrefix(strings.ToLower(modeStr), "e") || modeStr == "1" {
-					switchCfg.MnemonicDelivery = "email"
-				} else {
-					switchCfg.MnemonicDelivery = "physical"
-				}
-
-				// Physical location
-				fmt.Println()
-				fmt.Println("Where is the physical mnemonic backup stored?")
-				switchCfg.PassphraseLocation = promptLine(reader, "Location (e.g., 'sealed envelope in home safe'): ")
-
-				fmt.Println("Enter the 8 mnemonic words to store in the switch payload.")
-				fmt.Println("These will be sent to recipients if the switch triggers.")
-				fmt.Fprint(os.Stdout, "Enter 8 mnemonic words (space-separated): ")
-				var words []string
-				for i := 0; i < 8; i++ {
-					var w string
-					if _, err := fmt.Scan(&w); err != nil {
-						return fmt.Errorf("reading mnemonic word %d: %w", i+1, err)
-					}
-					words = append(words, w)
-				}
-
-				// Verify mnemonic works
-				header, err := vault.LoadHeader(cfg.VaultDir)
-				if err != nil {
-					return fmt.Errorf("loading vault header: %w", err)
-				}
-				mk, _, err := header.OpenWithMnemonic(words)
-				if err != nil {
-					return fmt.Errorf("invalid mnemonic: %w", err)
-				}
-				crypto.ZeroBytes(mk)
-
-				if err := deadswitch.StoreSwitchMnemonic(appDir, words); err != nil {
-					return err
-				}
+			// V4 is the only supported architecture for V2 vaults. init writes the
+			// DMS key; if it is missing (e.g. a vault created before V4, or one whose
+			// key was rotated away), rekey regenerates it.
+			if _, err := os.Stat(dmsKeyPath); err != nil {
+				return fmt.Errorf("no DMS key found — run 'kawarimi switch rekey' first to generate V4 switch material")
 			}
+			dmsKeyBase64, err := os.ReadFile(dmsKeyPath)
+			if err != nil {
+				return fmt.Errorf("reading DMS key: %w", err)
+			}
+			if err := deadswitch.StoreSwitchDMSKey(appDir, strings.TrimSpace(string(dmsKeyBase64))); err != nil {
+				return err
+			}
+			fmt.Println("DMS key loaded.")
+			fmt.Println("The DMS delivers this key to recipients when triggered; they also need the")
+			fmt.Println("physical card with the recipient passphrase to decrypt.")
 		} else {
 			fmt.Println("The vault passphrase is needed to set up the local (systemd) switch.")
 			passphrase, err := crypto.PromptPassphrase("Enter vault passphrase: ")
@@ -283,47 +223,16 @@ var switchSetupCmd = &cobra.Command{
 
 		// Install GitHub Actions workflow
 		fmt.Println()
-		useDMSKeyMode := false
 		if _, err := os.Stat(dmsKeyPath); err == nil {
-			useDMSKeyMode = true
-		}
-		useSealedMode := false
-		if !useDMSKeyMode {
-			if _, err := os.Stat(sealedPayloadPath); err == nil {
-				useSealedMode = true
-			}
-		}
-
-		if useDMSKeyMode {
 			// V4: arm the standalone cloud DMS repo (workflow + seeded heartbeat + push).
 			fmt.Println("-- Arming the cloud dead man's switch --")
 			if err := runSwitchSeed(reader, cfg, switchCfg, false); err != nil {
 				fmt.Fprintf(os.Stderr, "\nCould not arm the cloud switch yet: %v\n", err)
 				fmt.Println("Create the empty DMS repo, then run 'kawarimi switch seed' to finish.")
 			}
-		} else if useSealedMode {
-			// V3 legacy: Generate DMS workflow with sealed payload
-			dmsOutputDir := filepath.Join(appDir, "dms-workflow")
-			if err := deadswitch.GenerateGitHubDMSWorkflowFile(dmsOutputDir, switchCfg); err != nil {
-				return err
-			}
-			fmt.Printf("GitHub Actions DMS workflow generated at:\n  %s\n", filepath.Join(dmsOutputDir, ".github", "workflows", "deadman.yml"))
-			fmt.Println()
-			fmt.Println("Create a SEPARATE GitHub repo for the DMS (not the vault storage repo!).")
-			fmt.Println("Copy the workflow file and configure these repo secrets:")
-			fmt.Println("  SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD")
-			fmt.Println("  USER_EMAIL, RECIPIENT_EMAILS")
-			fmt.Println("  SEALED_PAYLOAD (the base64 sealed payload)")
-			fmt.Println("  VAULT_PACKAGE_LOCATION (where recipients download the vault)")
-			if switchCfg.TelegramBotToken != "" {
-				fmt.Println("  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
-			}
-			fmt.Println()
-			fmt.Println("The sealed payload value to set as a secret:")
-			sealedPayload, _ := os.ReadFile(sealedPayloadPath)
-			fmt.Printf("  %s\n", crypto.EncodeSealedPayload(sealedPayload))
 		} else {
-			// Legacy: install workflow in vault repo
+			// Legacy v1 (headerless) vault: install the passphrase-location workflow
+			// in the vault repo itself.
 			fmt.Println("Installing GitHub Actions workflow...")
 			if err := deadswitch.InstallGitHubWorkflow(cfg.VaultDir, switchCfg); err != nil {
 				return err
@@ -525,6 +434,132 @@ func runSwitchSeed(reader *bufio.Reader, cfg *config.Config, switchCfg *deadswit
 	fmt.Println("Enable the GitHub Actions workflow in the repo, then confirm with:")
 	fmt.Println("  kawarimi switch verify")
 	return nil
+}
+
+var switchRekeyCmd = &cobra.Command{
+	Use:   "rekey",
+	Short: "Rotate the DMS key after a false trigger or key leak",
+	Long: `Generates a new DMS key and re-seals the vault payload with it. Use this if the
+switch fired by mistake and the DMS key reached someone other than your intended
+recipients, or if the key leaked.
+
+By default the recipient passphrase (the physical card) is unchanged, so cards you
+have already handed out stay valid. Pass --rotate-passphrase to also generate a new
+one (you must then re-print and re-distribute the cards).
+
+Requires your 8 mnemonic words (paper backup) to re-seal; they are not stored.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		appDir, err := config.AppDirPath()
+		if err != nil {
+			return err
+		}
+
+		header, err := vault.LoadHeader(cfg.VaultDir)
+		if err != nil {
+			return fmt.Errorf("loading vault header (rekey needs a V2 vault): %w", err)
+		}
+
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Println("Rekey needs your 8 mnemonic words (from your paper backup).")
+		fmt.Println("They re-seal the vault and are not stored anywhere.")
+		words := make([]string, 8)
+		for i := range words {
+			words[i] = promptLine(reader, fmt.Sprintf("Word %d: ", i+1))
+		}
+
+		masterKey, _, err := header.OpenWithMnemonic(words)
+		if err != nil {
+			return fmt.Errorf("those words did not unlock the vault: %w", err)
+		}
+		crypto.ZeroBytes(masterKey)
+
+		entropy, err := crypto.DecodeMnemonic(words)
+		if err != nil {
+			return fmt.Errorf("decoding mnemonic: %w", err)
+		}
+		defer crypto.ZeroBytes(entropy)
+
+		var passphrase string
+		if switchRekeyRotatePassphrase {
+			passphrase, err = crypto.GenerateRecipientPassphrase()
+			if err != nil {
+				return fmt.Errorf("generating recipient passphrase: %w", err)
+			}
+		} else {
+			passphrase = promptLine(reader, "Recipient passphrase from the physical card (unchanged): ")
+			if passphrase == "" {
+				return fmt.Errorf("recipient passphrase required (or pass --rotate-passphrase to make a new one)")
+			}
+		}
+
+		dmsKeyB64, err := sealAndInstallV4(cfg.VaultDir, appDir, entropy, passphrase)
+		if err != nil {
+			return err
+		}
+
+		// Update the stored (encrypted) switch payload so the local systemd path
+		// also delivers the new key.
+		if deadswitch.IsSwitchConfigured(appDir) {
+			if err := deadswitch.StoreSwitchDMSKey(appDir, dmsKeyB64); err != nil {
+				return fmt.Errorf("updating stored switch payload: %w", err)
+			}
+		}
+
+		// If the switch had triggered, offer to clear the marker and re-arm.
+		triggeredPath := filepath.Join(appDir, "switch-triggered")
+		if _, err := os.Stat(triggeredPath); err == nil {
+			ans := promptLine(reader, "The switch is marked TRIGGERED. Clear it and re-arm? [y/N]: ")
+			if strings.HasPrefix(strings.ToLower(ans), "y") {
+				os.Remove(triggeredPath)
+				if targets, terr := checkinTargets(cfg); terr == nil {
+					if _, cerr := deadswitch.RecordCheckin(targets, time.Now()); cerr != nil {
+						fmt.Fprintf(os.Stderr, "Warning: re-arm check-in did not reach the cloud DMS: %v\n", cerr)
+					}
+				}
+			}
+		}
+
+		fmt.Println()
+		fmt.Println("========================================")
+		fmt.Println("  DMS KEY ROTATED")
+		fmt.Println("========================================")
+		if switchRekeyRotatePassphrase {
+			fmt.Println()
+			fmt.Println("NEW RECIPIENT PASSPHRASE (re-print the card and re-distribute to recipients):")
+			fmt.Printf("  %s\n", passphrase)
+		}
+		fmt.Println()
+		fmt.Println("New DMS_KEY value:")
+		fmt.Printf("  %s\n", dmsKeyB64)
+		fmt.Println()
+		fmt.Println("Finish the rotation:")
+		fmt.Println("  1. Update the GitHub secret DMS_KEY in your DMS repo to the value above")
+		fmt.Println("     (or run 'kawarimi switch seed' to reprint the checklist).")
+		fmt.Println("  2. Run 'kawarimi package build' and re-upload it to VAULT_PACKAGE_LOCATION.")
+		fmt.Println("  3. Replace or destroy old package copies (USB, cloud) — they carry the old seal.")
+		fmt.Println("  4. Run 'kawarimi switch verify'.")
+		return nil
+	},
+}
+
+// printTriggeredWarning explains a post-trigger situation appropriately for the
+// vault's architecture: V4 vaults disclosed a DMS key (which alone cannot open the
+// vault), whereas legacy v1 vaults disclosed the passphrase itself.
+func printTriggeredWarning(vaultDir string) {
+	if _, err := os.Stat(filepath.Join(vaultDir, vault.SealedPayloadFile)); err == nil {
+		fmt.Println("WARNING: the dead man's switch has TRIGGERED.")
+		fmt.Println("The DMS key may have been disclosed to whoever received the release email.")
+		fmt.Println("If that reached anyone beyond your intended recipients, run 'kawarimi switch rekey'.")
+		fmt.Println("(The DMS key alone cannot open the vault — the recipient card passphrase is also required.)")
+		return
+	}
+	fmt.Println("WARNING: the dead man's switch has TRIGGERED.")
+	fmt.Println("Your passphrase may have been sent to recipients.")
+	fmt.Println("Run 'kawarimi passwd' to change your passphrase.")
 }
 
 var switchVerifyCmd = &cobra.Command{

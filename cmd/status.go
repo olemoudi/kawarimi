@@ -57,8 +57,8 @@ var statusCmd = &cobra.Command{
 		// Check switch triggered marker
 		appDir, _ := config.AppDirPath()
 		if _, err := os.Stat(filepath.Join(appDir, "switch-triggered")); err == nil {
-			fmt.Println("\nALERT: Dead man's switch has been TRIGGERED.")
-			fmt.Println("Run 'kawarimi passwd' to change your passphrase.")
+			fmt.Println()
+			printTriggeredWarning(cfg.VaultDir)
 		}
 
 		// Cloud dead man's switch

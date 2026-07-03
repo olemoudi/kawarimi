@@ -32,9 +32,7 @@ var checkinCmd = &cobra.Command{
 		}
 		triggeredPath := filepath.Join(appDir, "switch-triggered")
 		if _, err := os.Stat(triggeredPath); err == nil {
-			fmt.Println("WARNING: The dead man's switch has been TRIGGERED.")
-			fmt.Println("Your passphrase may have been sent to recipients.")
-			fmt.Println("Run 'kawarimi passwd' to change your passphrase.")
+			printTriggeredWarning(cfg.VaultDir)
 			fmt.Println()
 		}
 

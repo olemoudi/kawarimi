@@ -96,13 +96,8 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("saving config: %w", err)
 		}
 
-		// Generate DMS key and recipient passphrase for V4 key-split architecture
-		dmsKey, err := crypto.GenerateDMSKey()
-		if err != nil {
-			return fmt.Errorf("generating DMS key: %w", err)
-		}
-		defer crypto.ZeroBytes(dmsKey)
-
+		// Generate the recipient passphrase and seal the mnemonic under it plus a
+		// fresh DMS key (V4 key-split architecture).
 		recipientPassphrase, err := crypto.GenerateRecipientPassphrase()
 		if err != nil {
 			return fmt.Errorf("generating recipient passphrase: %w", err)
@@ -113,22 +108,10 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("encoding mnemonic entropy: %w", err)
 		}
 
-		sealedPayload, err := crypto.SealMnemonicV4(mnemonicEntropy, dmsKey, recipientPassphrase)
-		if err != nil {
-			return fmt.Errorf("sealing mnemonic: %w", err)
-		}
+		_, err = sealAndInstallV4(vaultDir, appDir, mnemonicEntropy, recipientPassphrase)
 		crypto.ZeroBytes(mnemonicEntropy)
-
-		// Save sealed payload to vault directory (publicly downloadable)
-		sealedPath := filepath.Join(vaultDir, vault.SealedPayloadFile)
-		if err := os.WriteFile(sealedPath, sealedPayload, 0600); err != nil {
-			return fmt.Errorf("saving sealed payload: %w", err)
-		}
-
-		// Save DMS key to app directory for later use with switch setup
-		dmsKeyPath := filepath.Join(appDir, "dms-key")
-		if err := os.WriteFile(dmsKeyPath, []byte(crypto.EncodeDMSKey(dmsKey)), 0600); err != nil {
-			return fmt.Errorf("saving DMS key: %w", err)
+		if err != nil {
+			return err
 		}
 
 		// Display critical secrets
@@ -158,8 +141,8 @@ var initCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Printf("Vault initialized at %s\n", v.Dir)
 		fmt.Printf("Device key saved to %s\n", deviceKeyPath)
-		fmt.Printf("Sealed payload saved to %s\n", sealedPath)
-		fmt.Printf("DMS key saved to %s\n", dmsKeyPath)
+		fmt.Printf("Sealed payload saved to %s\n", filepath.Join(vaultDir, vault.SealedPayloadFile))
+		fmt.Printf("DMS key saved to %s\n", filepath.Join(appDir, "dms-key"))
 		fmt.Printf("Config saved to ~/%s/%s\n", config.AppDir, config.ConfigFile)
 		fmt.Println()
 		fmt.Println("Next steps:")
@@ -175,4 +158,35 @@ var initCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// sealAndInstallV4 seals the mnemonic entropy under a fresh DMS key plus the given
+// recipient passphrase (V4 key-split), writes the sealed payload into the vault, and
+// stores the DMS key locally. Returns the DMS key (base64) for display. Shared by
+// `init` and `switch rekey` so the two cannot drift.
+func sealAndInstallV4(vaultDir, appDir string, entropy []byte, recipientPassphrase string) (dmsKeyB64 string, err error) {
+	dmsKey, err := crypto.GenerateDMSKey()
+	if err != nil {
+		return "", fmt.Errorf("generating DMS key: %w", err)
+	}
+	defer crypto.ZeroBytes(dmsKey)
+
+	sealedPayload, err := crypto.SealMnemonicV4(entropy, dmsKey, recipientPassphrase)
+	if err != nil {
+		return "", fmt.Errorf("sealing mnemonic: %w", err)
+	}
+
+	// The sealed payload lives in the vault dir (publicly distributed in the package).
+	sealedPath := filepath.Join(vaultDir, vault.SealedPayloadFile)
+	if err := os.WriteFile(sealedPath, sealedPayload, 0600); err != nil {
+		return "", fmt.Errorf("saving sealed payload: %w", err)
+	}
+
+	// The DMS key is kept locally for `switch seed` to publish as the GitHub secret.
+	dmsKeyPath := filepath.Join(appDir, "dms-key")
+	if err := os.WriteFile(dmsKeyPath, []byte(crypto.EncodeDMSKey(dmsKey)), 0600); err != nil {
+		return "", fmt.Errorf("saving DMS key: %w", err)
+	}
+
+	return crypto.EncodeDMSKey(dmsKey), nil
 }
