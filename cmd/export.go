@@ -112,7 +112,7 @@ func exportWithDMSKey(vaultDir string, header *vault.Header, sealedPayloadPath s
 	fmt.Fprintln(os.Stderr, "Decrypting sealed payload...")
 	entropy, err := crypto.UnsealMnemonicV4(ciphertext, dmsKey, passphrase)
 	if err != nil {
-		return nil, fmt.Errorf("decrypting sealed payload (wrong DMS key or passphrase?): %w", err)
+		return nil, fmt.Errorf("could not decrypt: check the KEY and the card words — or this may be an old package copy, so download the newest one: %w", err)
 	}
 	defer crypto.ZeroBytes(entropy)
 

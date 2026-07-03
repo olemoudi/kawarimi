@@ -115,6 +115,9 @@ func TestGenerateGitHubDMSWorkflowInvariants(t *testing.T) {
 		"days_since >= 14",       // Warning1Days rendered
 		"days_since >= 30",       // FinalDays rendered (release threshold)
 		"${{ secrets.DMS_KEY }}", // GitHub expression passed through intact
+		"ESPAÑOL",                // release email is bilingual
+		"ENGLISH",
+		"INDEX.md", // shared canonical step marker across all recipient surfaces
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(yaml, s) {
@@ -127,6 +130,7 @@ func TestGenerateGitHubDMSWorkflowInvariants(t *testing.T) {
 		"%!",             // fmt error markers (e.g. %!d(...))
 		"days_since=999", // old fail-open sentinel that emailed recipients immediately
 		"date -j",        // macOS fallback removed (runner is always ubuntu)
+		"age -d",         // recipients must never be told to use the age CLI (fails on V2/V4)
 	}
 	for _, s := range mustNotContain {
 		if strings.Contains(yaml, s) {

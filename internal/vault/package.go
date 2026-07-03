@@ -7,6 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/olemoudi/kawarimi/internal/copytext"
 )
 
 const (
@@ -47,14 +50,17 @@ func BuildPackage(vaultDir string, outputPath string, binariesDir string) error 
 	}
 
 	// Add binaries if provided
+	var binaries []string
 	if binariesDir != "" {
-		if err := addBinariesToZip(w, binariesDir); err != nil {
+		names, err := addBinariesToZip(w, binariesDir)
+		if err != nil {
 			return fmt.Errorf("adding binaries to package: %w", err)
 		}
+		binaries = names
 	}
 
-	// Add instructions
-	instructions := generatePackageInstructions()
+	// Add instructions (bilingual; lists exactly the binaries that shipped)
+	instructions := copytext.PackageInstructions(binaries, time.Now().UTC().Format("2006-01-02"))
 	iw, err := w.Create(PackageInstructionsFile)
 	if err != nil {
 		return fmt.Errorf("creating instructions entry: %w", err)
@@ -195,12 +201,15 @@ func addDirToZip(w *zip.Writer, srcDir string, zipPrefix string) error {
 	})
 }
 
-func addBinariesToZip(w *zip.Writer, binariesDir string) error {
+// addBinariesToZip copies every kawarimi-* file from binariesDir into the zip and
+// returns the names it added, so the instructions can list exactly what shipped.
+func addBinariesToZip(w *zip.Writer, binariesDir string) ([]string, error) {
 	entries, err := os.ReadDir(binariesDir)
 	if err != nil {
-		return fmt.Errorf("reading binaries directory: %w", err)
+		return nil, fmt.Errorf("reading binaries directory: %w", err)
 	}
 
+	var added []string
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -215,7 +224,7 @@ func addBinariesToZip(w *zip.Writer, binariesDir string) error {
 		path := filepath.Join(binariesDir, name)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("reading binary %s: %w", name, err)
+			return nil, fmt.Errorf("reading binary %s: %w", name, err)
 		}
 
 		// Create with executable permissions
@@ -227,65 +236,14 @@ func addBinariesToZip(w *zip.Writer, binariesDir string) error {
 
 		fw, err := w.CreateHeader(header)
 		if err != nil {
-			return fmt.Errorf("creating zip entry for %s: %w", name, err)
+			return nil, fmt.Errorf("creating zip entry for %s: %w", name, err)
 		}
 
 		if _, err := fw.Write(data); err != nil {
-			return fmt.Errorf("writing %s to zip: %w", name, err)
+			return nil, fmt.Errorf("writing %s to zip: %w", name, err)
 		}
+		added = append(added, name)
 	}
 
-	return nil
-}
-
-func generatePackageInstructions() string {
-	return `# How to Access This Vault
-
-This package contains an encrypted information vault. To decrypt it,
-you need TWO things:
-
-1. The DMS KEY — sent to you by email when the dead man's switch triggered
-2. The RECIPIENT PASSPHRASE — printed on a physical card given to you by the vault owner
-
-The sealed payload is already included in this vault package.
-
-## Step-by-Step Instructions
-
-### 1. Find the right binary for your computer
-
-This package includes kawarimi binaries for different platforms:
-- kawarimi-linux-amd64     (Linux)
-- kawarimi-darwin-arm64    (Mac with Apple Silicon)
-- kawarimi-windows-amd64.exe (Windows)
-
-### 2. Make the binary executable (Mac/Linux only)
-
-    chmod +x ./kawarimi-*
-
-### 3. Decrypt the vault
-
-Run the kawarimi tool:
-
-    ./kawarimi-linux-amd64 export --sealed ./decrypted/
-
-    (use the binary matching your computer)
-
-You will be prompted for:
-- The DMS KEY (paste the base64 text from the email you received)
-- The recipient passphrase (from the physical card)
-
-### 4. Access your files
-
-The decrypted files will be in the ./decrypted/ directory:
-- notes/       — Written instructions (Markdown, open with any text editor)
-- credentials/ — Account credentials (JSON, open with any text editor)
-- documents/   — Scanned documents (PDF, images)
-- INDEX.md     — Overview of all vault contents
-
-## Troubleshooting
-
-- Make sure you paste the ENTIRE DMS key from the email (it's a base64 string)
-- Type the passphrase exactly as printed on the card (case-sensitive)
-- If you have problems, try a different binary (e.g., the Mac binary on a Mac)
-`
+	return added, nil
 }

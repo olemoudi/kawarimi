@@ -2,6 +2,7 @@ package vault_test
 
 import (
 	"archive/zip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,26 @@ import (
 	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/vault"
 )
+
+func readZipEntry(t *testing.T, r *zip.ReadCloser, name string) string {
+	t.Helper()
+	for _, f := range r.File {
+		if f.Name == name {
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatalf("opening %s in zip: %v", name, err)
+			}
+			defer rc.Close()
+			data, err := io.ReadAll(rc)
+			if err != nil {
+				t.Fatalf("reading %s in zip: %v", name, err)
+			}
+			return string(data)
+		}
+	}
+	t.Fatalf("%s not found in zip", name)
+	return ""
+}
 
 func createTestVaultWithDir(t *testing.T) (string, *vault.Vault) {
 	t.Helper()
@@ -151,6 +172,18 @@ func TestBuildPackageWithBinaries(t *testing.T) {
 	}
 	if hasOther {
 		t.Error("non-kawarimi file should not be included")
+	}
+
+	// INSTRUCTIONS.md must be bilingual, list the bundled binaries, and never
+	// mention the age CLI (which cannot open a V2/V4 vault).
+	instr := readZipEntry(t, r, "INSTRUCTIONS.md")
+	for _, want := range []string{"ESPAÑOL", "ENGLISH", "kawarimi-linux-amd64", "kawarimi-windows-amd64.exe", "INDEX.md"} {
+		if !strings.Contains(instr, want) {
+			t.Errorf("INSTRUCTIONS.md missing %q", want)
+		}
+	}
+	if strings.Contains(instr, "age -d") {
+		t.Error("INSTRUCTIONS.md must not mention `age -d`")
 	}
 }
 

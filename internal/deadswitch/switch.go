@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/olemoudi/kawarimi/internal/copytext"
 	"github.com/olemoudi/kawarimi/internal/vault"
 )
 
@@ -390,49 +391,19 @@ Do not share it beyond the intended recipients.
 func triggerFinalReleaseV4(switchCfg *SwitchConfig, payload string) error {
 	dmsKeyBase64 := strings.TrimPrefix(payload, "DMSKEY:")
 
-	// Vault package location
-	locationSection := "1. Download the vault package:\n"
-	if switchCfg.VaultPackageLocation != "" {
-		locationSection += "   " + strings.ReplaceAll(switchCfg.VaultPackageLocation, "\n", "\n   ")
-	} else if switchCfg.DeliveryInstructions != "" {
-		locationSection += "   " + strings.ReplaceAll(switchCfg.DeliveryInstructions, "\n", "\n   ")
-	} else if switchCfg.VaultRepoURL != "" {
-		locationSection += fmt.Sprintf("   Git repository: %s\n   Run: git clone %s", switchCfg.VaultRepoURL, switchCfg.VaultRepoURL)
-	} else {
-		locationSection += "   Check with family for the vault package location."
+	location := switchCfg.VaultPackageLocation
+	if location == "" {
+		location = switchCfg.DeliveryInstructions
+	}
+	if location == "" && switchCfg.VaultRepoURL != "" {
+		location = switchCfg.VaultRepoURL
+	}
+	if location == "" {
+		location = "(ask the family where the vault package is stored)"
 	}
 
-	subject := "Important: Access Information Vault"
-	body := fmt.Sprintf(`This is an automated message from the Kawarimi information vault.
-
-The vault owner has not checked in for an extended period.
-
-HOW TO ACCESS THE VAULT:
-
-%s
-
-2. Extract the vault package (zip file).
-
-3. Find the kawarimi program for your computer:
-   - kawarimi-linux-amd64     (Linux)
-   - kawarimi-darwin-arm64    (Mac with Apple Silicon)
-   - kawarimi-windows-amd64.exe (Windows)
-
-4. Open a terminal/command prompt and run:
-   ./kawarimi export --sealed ./decrypted/
-
-5. When prompted, paste this DMS KEY:
-
-%s
-
-6. When prompted, enter the RECIPIENT PASSPHRASE from the
-   physical card given to you by the vault owner.
-
-7. Your decrypted files will be in the ./decrypted/ directory.
-
-IMPORTANT: Keep the recipient passphrase card secure.
-Do not share it beyond the intended recipients.
-`, locationSection, dmsKeyBase64)
+	subject := "Importante: acceso a la caja fuerte / Important: vault access"
+	body := copytext.ReleaseEmailBody(location, dmsKeyBase64)
 
 	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
 }

@@ -11,10 +11,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// version is overridden at build time via
+// -ldflags "-X github.com/olemoudi/kawarimi/cmd.version=<v>".
+var version = "dev"
+
 var rootCmd = &cobra.Command{
-	Use:   "kawarimi",
-	Short: "Encrypted end-of-life information vault",
-	Long:  "Kawarimi manages an encrypted vault of instructions, credentials, and documents for your family.",
+	Use:     "kawarimi",
+	Short:   "Encrypted end-of-life information vault",
+	Long:    "Kawarimi manages an encrypted vault of instructions, credentials, and documents for your family.",
+	Version: version,
 }
 
 func Execute() {

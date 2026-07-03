@@ -6,14 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/olemoudi/kawarimi/internal/copytext"
 	"github.com/olemoudi/kawarimi/internal/crypto"
 )
 
 const (
-	ManifestFile           = "manifest.age"
-	ReadmeFile             = "README.md"
+	ManifestFile            = "manifest.age"
+	ReadmeFile              = "README.md"
 	DecryptInstructionsFile = "DECRYPT_INSTRUCTIONS.md"
-	LastCheckinFile        = "last_checkin"
+	LastCheckinFile         = "last_checkin"
 )
 
 // Vault represents an open vault on disk.
@@ -422,10 +423,10 @@ func createVaultDirs(dir string) error {
 }
 
 func writeVaultReadme(dir string) error {
-	if err := os.WriteFile(filepath.Join(dir, ReadmeFile), []byte(readmeContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ReadmeFile), []byte(copytext.VaultReadme()), 0644); err != nil {
 		return fmt.Errorf("writing README: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, DecryptInstructionsFile), []byte(decryptInstructionsContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, DecryptInstructionsFile), []byte(copytext.VaultDecryptInstructions()), 0644); err != nil {
 		return fmt.Errorf("writing decrypt instructions: %w", err)
 	}
 	return nil
