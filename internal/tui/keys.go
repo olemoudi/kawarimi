@@ -4,17 +4,17 @@ import "github.com/charmbracelet/bubbles/key"
 
 // KeyMap defines the shared key bindings for the TUI.
 type KeyMap struct {
-	Quit      key.Binding
-	Tab       key.Binding
-	ShiftTab  key.Binding
-	Enter     key.Binding
-	Back      key.Binding
-	New       key.Binding
-	Edit      key.Binding
-	Delete    key.Binding
-	Help      key.Binding
-	CheckIn   key.Binding
-	Sync      key.Binding
+	Quit     key.Binding
+	Tab      key.Binding
+	ShiftTab key.Binding
+	Enter    key.Binding
+	Back     key.Binding
+	New      key.Binding
+	Edit     key.Binding
+	Delete   key.Binding
+	Help     key.Binding
+	CheckIn  key.Binding
+	Sync     key.Binding
 }
 
 // Keys is the global key binding instance.

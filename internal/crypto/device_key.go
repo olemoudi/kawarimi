@@ -9,12 +9,12 @@ import (
 
 // DeviceKeyFile represents the encrypted device key stored on disk.
 type DeviceKeyFile struct {
-	Version       int          `json:"version"`
-	KDF           string       `json:"kdf"`
-	KDFParams     Argon2Params `json:"kdf_params"`
-	Salt          []byte       `json:"salt"`
-	Nonce         []byte       `json:"nonce"`
-	EncryptedKey  []byte       `json:"encrypted_key"`
+	Version      int          `json:"version"`
+	KDF          string       `json:"kdf"`
+	KDFParams    Argon2Params `json:"kdf_params"`
+	Salt         []byte       `json:"salt"`
+	Nonce        []byte       `json:"nonce"`
+	EncryptedKey []byte       `json:"encrypted_key"`
 }
 
 // GenerateDeviceKey creates a new random 32-byte device key.

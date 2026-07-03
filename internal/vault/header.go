@@ -31,13 +31,13 @@ const (
 
 // Slot represents a single key-wrapping slot in the vault header.
 type Slot struct {
-	ID                 int              `json:"id"`
-	Type               SlotType         `json:"type"`
-	KDF                string           `json:"kdf"`
+	ID                 int                 `json:"id"`
+	Type               SlotType            `json:"type"`
+	KDF                string              `json:"kdf"`
 	KDFParams          crypto.Argon2Params `json:"kdf_params"`
-	Salt               []byte           `json:"salt"`
-	EncryptedMasterKey []byte           `json:"encrypted_master_key"`
-	Nonce              []byte           `json:"nonce"`
+	Salt               []byte              `json:"salt"`
+	EncryptedMasterKey []byte              `json:"encrypted_master_key"`
+	Nonce              []byte              `json:"nonce"`
 	// Owner slot fields
 	DeviceID      string `json:"device_id,omitempty"`
 	DeviceKeySalt []byte `json:"device_key_salt,omitempty"`
@@ -58,8 +58,8 @@ type Header struct {
 
 // InitParams holds the inputs for creating a new vault header.
 type InitParams struct {
-	Password     string
-	DeviceID     string
+	Password string
+	DeviceID string
 	// Optional KDF param overrides. Nil means use production defaults.
 	MnemonicKDFParams *crypto.Argon2Params
 	OwnerKDFParams    *crypto.Argon2Params
@@ -83,12 +83,12 @@ func (p InitParams) ownerParams() crypto.Argon2Params {
 
 // InitResult holds the outputs from creating a new vault header.
 type InitResult struct {
-	Header       *Header
+	Header        *Header
 	MnemonicWords []string
-	RecoveryCode []byte
-	DeviceKey    []byte
-	MasterKey    []byte // caller must zero after use
-	AgeIdentity  string // caller must zero after use
+	RecoveryCode  []byte
+	DeviceKey     []byte
+	MasterKey     []byte // caller must zero after use
+	AgeIdentity   string // caller must zero after use
 }
 
 // NewHeader creates a new vault header with all three slot types.

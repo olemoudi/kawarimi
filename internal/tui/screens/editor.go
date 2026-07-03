@@ -29,9 +29,9 @@ const (
 
 // Editor is the entry create/edit form.
 type Editor struct {
-	mode     EditorMode
-	entry    *vault.Entry // nil for new entries
-	v        *vault.Vault
+	mode  EditorMode
+	entry *vault.Entry // nil for new entries
+	v     *vault.Vault
 
 	// Note fields
 	titleInput textinput.Model

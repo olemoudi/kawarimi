@@ -17,14 +17,14 @@ type ConfigSavedMsg struct{}
 
 // Config is the settings editor screen.
 type Config struct {
-	cfg        *config.Config
-	fields     []configField
-	focusIdx   int
-	statusBar  components.StatusBar
-	toast      components.Toast
-	err        string
-	width      int
-	height     int
+	cfg       *config.Config
+	fields    []configField
+	focusIdx  int
+	statusBar components.StatusBar
+	toast     components.Toast
+	err       string
+	width     int
+	height    int
 }
 
 type configField struct {

@@ -16,10 +16,10 @@ import (
 
 // Dashboard is the status overview screen.
 type Dashboard struct {
-	v         *vault.Vault
-	cfg       *config.Config
-	width     int
-	height    int
+	v      *vault.Vault
+	cfg    *config.Config
+	width  int
+	height int
 }
 
 // NewDashboard creates the status overview screen.
