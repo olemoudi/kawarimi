@@ -29,6 +29,13 @@ func GenerateRecipientPassphrase() (string, error) {
 	return strings.Join(words, " "), nil
 }
 
+// NormalizeRecipientPassphrase lowercases and collapses whitespace so a card typed
+// with stray spaces or capitals still matches. GenerateRecipientPassphrase already
+// produces this canonical form, so normalizing a correct passphrase is a no-op.
+func NormalizeRecipientPassphrase(s string) string {
+	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
+}
+
 // ValidateRecipientPassphrase checks that a passphrase consists of valid BIP39 words.
 func ValidateRecipientPassphrase(passphrase string) error {
 	words := strings.Fields(passphrase)
