@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mattn/go-isatty"
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/crypto"
+	"github.com/olemoudi/kawarimi/internal/recipient"
 	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
 )
@@ -20,6 +22,63 @@ var rootCmd = &cobra.Command{
 	Short:   "Encrypted end-of-life information vault",
 	Long:    "Kawarimi manages an encrypted vault of instructions, credentials, and documents for your family.",
 	Version: version,
+	// With no subcommand, launch the recipient wizard when this looks like a
+	// recipient's machine (a package is nearby, no owner device key, interactive);
+	// otherwise print help as before. This is what makes double-clicking the
+	// binary inside an extracted package "just work".
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if recipientContext() {
+			cmd.SilenceUsage = true  // the wizard prints its own guidance
+			cmd.SilenceErrors = true // (only affects this root invocation)
+			return recipient.Run(recipient.Options{})
+		}
+		return cmd.Help()
+	},
+}
+
+// recipientContext reports whether bare `kawarimi` should launch the recipient
+// wizard: an interactive session, no owner device key on this machine, and a sealed
+// payload reachable nearby. All three guards must hold so owner machines, scripts,
+// and CI are unaffected.
+func recipientContext() bool {
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		return false
+	}
+	if ownerDeviceKeyExists() {
+		return false
+	}
+	cwd, _ := os.Getwd()
+	exeDir := ""
+	if exe, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exe)
+	}
+	return hasNearbySealedPayload(cwd, exeDir)
+}
+
+func ownerDeviceKeyExists() bool {
+	appDir, err := config.AppDirPath()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(appDir, "device.key"))
+	return err == nil
+}
+
+func hasNearbySealedPayload(cwd, exeDir string) bool {
+	for _, base := range []string{cwd, exeDir} {
+		if base == "" {
+			continue
+		}
+		for _, rel := range []string{
+			filepath.Join(vault.PackageVaultDir, vault.SealedPayloadFile),
+			vault.SealedPayloadFile,
+		} {
+			if _, err := os.Stat(filepath.Join(base, rel)); err == nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func Execute() {
