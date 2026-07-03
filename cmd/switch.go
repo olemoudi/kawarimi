@@ -24,6 +24,7 @@ func init() {
 	rootCmd.AddCommand(switchCmd)
 	switchCmd.AddCommand(switchSetupCmd)
 	switchCmd.AddCommand(switchSeedCmd)
+	switchCmd.AddCommand(switchVerifyCmd)
 	switchCmd.AddCommand(switchTestCmd)
 	switchCmd.AddCommand(switchDisableCmd)
 	switchCmd.AddCommand(switchEvaluateCmd)
@@ -524,6 +525,111 @@ func runSwitchSeed(reader *bufio.Reader, cfg *config.Config, switchCfg *deadswit
 	fmt.Println("Enable the GitHub Actions workflow in the repo, then confirm with:")
 	fmt.Println("  kawarimi switch verify")
 	return nil
+}
+
+var switchVerifyCmd = &cobra.Command{
+	Use:   "verify",
+	Short: "Check that the dead man's switch is armed and current",
+	Long: `Verifies the switch end-to-end: that a local check-in exists, and that the
+cloud DMS repo has a current heartbeat and an up-to-date workflow. This is what
+catches a switch that silently stopped working (e.g. a stale workflow, or
+check-ins that never reach the repo).`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		appDir, err := config.AppDirPath()
+		if err != nil {
+			return err
+		}
+		if !deadswitch.IsSwitchConfigured(appDir) {
+			return fmt.Errorf("switch not configured — run 'kawarimi switch setup' first")
+		}
+		switchCfg, err := deadswitch.LoadSwitchConfig(appDir)
+		if err != nil {
+			return err
+		}
+		targets, err := checkinTargets(cfg)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("Checking dead man's switch...")
+		report, err := deadswitch.Verify(targets, switchCfg, appDir)
+		if err != nil {
+			return err
+		}
+		printVerifyReport(report, switchCfg)
+
+		if !report.OK() {
+			return fmt.Errorf("verification FAILED — fix the items above (usually 'kawarimi switch seed')")
+		}
+		return nil
+	},
+}
+
+func printVerifyReport(r *deadswitch.VerifyReport, switchCfg *deadswitch.SwitchConfig) {
+	mark := func(ok bool) string {
+		if ok {
+			return "[PASS]"
+		}
+		return "[FAIL]"
+	}
+	const warn = "[WARN]"
+
+	fmt.Println()
+
+	if r.LocalCheckinErr != nil {
+		fmt.Printf("%s Local check-in: none recorded (run 'kawarimi checkin')\n", mark(false))
+	} else {
+		fmt.Printf("%s Local check-in: %s\n", mark(true), r.LocalCheckin.Format(time.RFC3339))
+	}
+
+	if !r.DMSConfigured {
+		fmt.Printf("%s Cloud DMS: not configured (run 'kawarimi switch seed' to arm it)\n", warn)
+	} else {
+		fmt.Printf("       Cloud DMS repo: %s\n", r.DMSRemote)
+
+		switch {
+		case r.RemoteCheckinErr != nil:
+			fmt.Printf("%s Remote heartbeat: unreadable (%v)\n", mark(false), r.RemoteCheckinErr)
+		case r.RemoteStale:
+			fmt.Printf("%s Remote heartbeat: STALE %s — local is newer, check-ins are not reaching the repo\n",
+				mark(false), r.RemoteCheckin.Format(time.RFC3339))
+		default:
+			fmt.Printf("%s Remote heartbeat: %s\n", mark(true), r.RemoteCheckin.Format(time.RFC3339))
+		}
+
+		switch {
+		case !r.WorkflowPresent:
+			fmt.Printf("%s Workflow: missing on remote (run 'kawarimi switch seed')\n", mark(false))
+		case !r.WorkflowUpToDate:
+			fmt.Printf("%s Workflow: OUT OF DATE (run 'kawarimi switch seed' to update it)\n", mark(false))
+		default:
+			fmt.Printf("%s Workflow: up to date\n", mark(true))
+		}
+	}
+
+	if r.SystemdTimerActive {
+		fmt.Println("       Local systemd timer: active")
+	} else {
+		fmt.Println("       Local systemd timer: inactive (the cloud DMS is the real post-mortem trigger)")
+	}
+
+	if r.FinalDaysRisky {
+		fmt.Printf("%s FinalDays=%d risks GitHub auto-disabling the scheduled workflow (it disables\n", warn, switchCfg.FinalDays)
+		fmt.Println("       schedules after ~60 days of repo inactivity). Consider a lower FinalDays.")
+	}
+
+	if r.Triggered {
+		fmt.Printf("%s Switch has already TRIGGERED — the DMS key may have been disclosed.\n", warn)
+	}
+
+	fmt.Println()
+	fmt.Println("Not checkable from here: the GitHub repo secrets (DMS_KEY, SMTP_*, RECIPIENT_EMAILS,")
+	fmt.Println("VAULT_PACKAGE_LOCATION) and real email delivery. Confirm those in the repo settings")
+	fmt.Println("and with 'kawarimi switch test'.")
 }
 
 var switchEvaluateCmd = &cobra.Command{

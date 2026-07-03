@@ -229,6 +229,46 @@ func (g *GitSync) ForcePush() error {
 	return nil
 }
 
+// ReadRemoteFile fetches origin and returns the contents of relPath at origin/main
+// without touching the worktree. Used to inspect the DMS repo's state (heartbeat and
+// workflow) from another machine.
+func (g *GitSync) ReadRemoteFile(relPath string) (string, error) {
+	repo, err := g.EnsureRepo()
+	if err != nil {
+		return "", err
+	}
+	if err := g.EnsureRemote(repo); err != nil {
+		return "", err
+	}
+
+	auth, err := g.authFor()
+	if err != nil {
+		return "", err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
+	defer cancel()
+
+	err = repo.FetchContext(ctx, &git.FetchOptions{RemoteName: "origin", Auth: auth})
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return "", fmt.Errorf("fetching remote: %w", err)
+	}
+
+	ref, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "main"), true)
+	if err != nil {
+		return "", fmt.Errorf("resolving origin/main: %w", err)
+	}
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return "", fmt.Errorf("reading commit: %w", err)
+	}
+	f, err := commit.File(relPath)
+	if err != nil {
+		return "", fmt.Errorf("%s not found on remote: %w", relPath, err)
+	}
+	return f.Contents()
+}
+
 func (g *GitSync) push(repo *git.Repository) error {
 	if g.RemoteURL == "" {
 		return nil

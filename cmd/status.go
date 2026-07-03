@@ -61,6 +61,14 @@ var statusCmd = &cobra.Command{
 			fmt.Println("Run 'kawarimi passwd' to change your passphrase.")
 		}
 
+		// Cloud dead man's switch
+		if cfg.SyncTargets.DMSRemote != "" {
+			fmt.Printf("\nCloud DMS: configured (%s)\n", cfg.SyncTargets.DMSRemote)
+			fmt.Println("  Run 'kawarimi switch verify' to confirm it is armed and current.")
+		} else {
+			fmt.Println("\nCloud DMS: not configured")
+		}
+
 		fmt.Printf("\nSync targets:\n")
 		if cfg.SyncTargets.GitRemote != "" {
 			fmt.Printf("  Git: %s\n", cfg.SyncTargets.GitRemote)
