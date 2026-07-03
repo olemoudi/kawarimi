@@ -24,7 +24,7 @@ func OpenSealedV4(vaultDir string, dmsKey []byte, passphrase string) (*Vault, er
 		return nil, fmt.Errorf("reading sealed payload: %w", err)
 	}
 
-	entropy, err := crypto.UnsealMnemonicV4(ciphertext, dmsKey, crypto.NormalizeRecipientPassphrase(passphrase))
+	entropy, err := crypto.UnsealMnemonicV4(ciphertext, dmsKey, crypto.NormalizeWords(passphrase))
 	if err != nil {
 		return nil, err
 	}

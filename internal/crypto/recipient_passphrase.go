@@ -12,13 +12,12 @@ import (
 // this provides strong brute-force resistance for the sealed payload.
 const RecipientPassphraseWords = 6
 
-// GenerateRecipientPassphrase creates a random 6-word passphrase from the BIP39 word list.
-// Returns the passphrase as a space-separated string.
-func GenerateRecipientPassphrase() (string, error) {
-	words := make([]string, RecipientPassphraseWords)
+// GenerateWords returns n random space-separated words from the BIP39 word list.
+func GenerateWords(n int) (string, error) {
+	words := make([]string, n)
 	wordListLen := big.NewInt(int64(len(bip39WordList)))
 
-	for i := 0; i < RecipientPassphraseWords; i++ {
+	for i := 0; i < n; i++ {
 		idx, err := rand.Int(rand.Reader, wordListLen)
 		if err != nil {
 			return "", fmt.Errorf("generating random word index: %w", err)
@@ -29,10 +28,16 @@ func GenerateRecipientPassphrase() (string, error) {
 	return strings.Join(words, " "), nil
 }
 
-// NormalizeRecipientPassphrase lowercases and collapses whitespace so a card typed
-// with stray spaces or capitals still matches. GenerateRecipientPassphrase already
-// produces this canonical form, so normalizing a correct passphrase is a no-op.
-func NormalizeRecipientPassphrase(s string) string {
+// GenerateRecipientPassphrase creates a random 6-word passphrase from the BIP39 word list.
+// Returns the passphrase as a space-separated string.
+func GenerateRecipientPassphrase() (string, error) {
+	return GenerateWords(RecipientPassphraseWords)
+}
+
+// NormalizeWords lowercases and collapses whitespace so a word phrase typed with
+// stray spaces or capitals still matches the canonical (generated) form. The
+// generators already produce this form, so normalizing a correct phrase is a no-op.
+func NormalizeWords(s string) string {
 	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
 }
 

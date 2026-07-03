@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/crypto"
@@ -74,7 +76,7 @@ var deviceAddCmd = &cobra.Command{
 var deviceEnrollCmd = &cobra.Command{
 	Use:   "enroll",
 	Short: "Generate an enrollment token for a new device",
-	Long:  "Unlocks the vault on this (trusted) device and generates a PIN-protected token for enrolling another device.",
+	Long:  "Unlocks the vault on this (trusted) device and generates a code-protected token for enrolling another device.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
@@ -116,7 +118,7 @@ var deviceEnrollCmd = &cobra.Command{
 		defer crypto.ZeroBytes(masterKey)
 
 		// Generate enrollment token
-		tokenStr, pin, err := vault.GenerateEnrollmentToken(masterKey)
+		tokenStr, code, err := vault.GenerateEnrollmentToken(masterKey)
 		if err != nil {
 			return fmt.Errorf("generating token: %w", err)
 		}
@@ -132,7 +134,7 @@ var deviceEnrollCmd = &cobra.Command{
 		fmt.Println("Token (paste this on the new device):")
 		fmt.Println(tokenStr)
 		fmt.Println()
-		fmt.Printf("PIN: %s\n", pin)
+		fmt.Printf("Code (4 words, tell the new device out-of-band): %s\n", code)
 		fmt.Println()
 		fmt.Println("The token expires in 10 minutes.")
 		fmt.Println("========================================")
@@ -144,7 +146,7 @@ var deviceEnrollCmd = &cobra.Command{
 var deviceAcceptCmd = &cobra.Command{
 	Use:   "accept",
 	Short: "Accept an enrollment token from a trusted device",
-	Long:  "Uses an enrollment token + PIN to register this device. The new device can use its own password.",
+	Long:  "Uses an enrollment token + code to register this device. The new device can use its own password.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
@@ -160,18 +162,18 @@ var deviceAcceptCmd = &cobra.Command{
 			return fmt.Errorf("device key already exists at %s — this device is already registered", deviceKeyPath)
 		}
 
-		// Get token and PIN
+		// Get token and code (the code is 4 words, so read whole lines)
+		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Paste enrollment token: ")
-		var tokenStr string
-		fmt.Scanln(&tokenStr)
+		tokenLine, _ := reader.ReadString('\n')
+		tokenStr := strings.TrimSpace(tokenLine)
 
-		pin, err := crypto.PromptPassphrase("Enter PIN: ")
-		if err != nil {
-			return err
-		}
+		fmt.Print("Enter the 4-word code: ")
+		codeLine, _ := reader.ReadString('\n')
+		code := strings.TrimSpace(codeLine)
 
 		// Decrypt token
-		masterKey, err := vault.AcceptEnrollmentToken(tokenStr, pin)
+		masterKey, err := vault.AcceptEnrollmentToken(tokenStr, code)
 		if err != nil {
 			return fmt.Errorf("token rejected: %w", err)
 		}
