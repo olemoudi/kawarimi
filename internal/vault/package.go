@@ -44,9 +44,25 @@ func BuildPackage(vaultDir string, outputPath string, binariesDir string) error 
 	w := zip.NewWriter(out)
 	defer w.Close()
 
-	// Add vault files
+	// Add vault files (the on-disk recipient docs are skipped by addDirToZip)
 	if err := addDirToZip(w, vaultDir, PackageVaultDir); err != nil {
 		return fmt.Errorf("adding vault to package: %w", err)
+	}
+
+	// Inject fresh, correct recipient docs into the packaged vault dir.
+	injected := map[string]string{
+		ReadmeFile:              copytext.VaultReadme(),
+		DecryptInstructionsFile: copytext.VaultDecryptInstructions(),
+	}
+	for name, content := range injected {
+		zipPath := PackageVaultDir + "/" + name
+		fw, err := w.Create(zipPath)
+		if err != nil {
+			return fmt.Errorf("creating %s in package: %w", zipPath, err)
+		}
+		if _, err := fw.Write([]byte(content)); err != nil {
+			return fmt.Errorf("writing %s to package: %w", zipPath, err)
+		}
 	}
 
 	// Add binaries if provided
@@ -161,6 +177,13 @@ func addDirToZip(w *zip.Writer, srcDir string, zipPrefix string) error {
 
 		// Skip last_checkin file (DMS state, not part of vault content)
 		if info.Name() == LastCheckinFile {
+			return nil
+		}
+
+		// Skip the on-disk recipient docs; BuildPackage injects fresh copies so
+		// even vaults created before the bilingual rewrite ship correct
+		// instructions instead of the old age-CLI ones.
+		if !info.IsDir() && (info.Name() == ReadmeFile || info.Name() == DecryptInstructionsFile) {
 			return nil
 		}
 

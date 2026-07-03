@@ -187,6 +187,41 @@ func TestBuildPackageWithBinaries(t *testing.T) {
 	}
 }
 
+// TestBuildPackageInjectsFreshRecipientDocs verifies that a vault whose on-disk
+// README/DECRYPT_INSTRUCTIONS still carry the old age-CLI instructions ships the
+// corrected, injected copies in the package instead.
+func TestBuildPackageInjectsFreshRecipientDocs(t *testing.T) {
+	vaultDir, _ := createTestVaultWithDir(t)
+
+	stale := "# old\n\nRun: age -d manifest.age > manifest.json\nEnter the passphrase when prompted.\n"
+	for _, name := range []string{"README.md", "DECRYPT_INSTRUCTIONS.md"} {
+		if err := os.WriteFile(filepath.Join(vaultDir, name), []byte(stale), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	outPath := filepath.Join(t.TempDir(), "pkg.zip")
+	if err := vault.BuildPackage(vaultDir, outPath, ""); err != nil {
+		t.Fatalf("BuildPackage: %v", err)
+	}
+
+	r, err := zip.OpenReader(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	for _, name := range []string{"vault/README.md", "vault/DECRYPT_INSTRUCTIONS.md"} {
+		content := readZipEntry(t, r, name)
+		if strings.Contains(content, "age -d") {
+			t.Errorf("%s in package still carries stale age-CLI content", name)
+		}
+		if !strings.Contains(content, "kawarimi") {
+			t.Errorf("%s in package should reference kawarimi", name)
+		}
+	}
+}
+
 func TestExtractPackage(t *testing.T) {
 	vaultDir, _ := createTestVaultWithDir(t)
 	outputDir := t.TempDir()
