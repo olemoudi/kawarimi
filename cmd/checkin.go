@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/olemoudi/kawarimi/internal/config"
+	"github.com/olemoudi/kawarimi/internal/deadswitch"
 	gosync "github.com/olemoudi/kawarimi/internal/sync"
-	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
 )
 
@@ -38,21 +38,40 @@ var checkinCmd = &cobra.Command{
 			fmt.Println()
 		}
 
-		// Write check-in timestamp to vault
 		now := time.Now().UTC()
-		checkinPath := filepath.Join(cfg.VaultDir, vault.LastCheckinFile)
-		if err := os.WriteFile(checkinPath, []byte(now.Format(time.RFC3339)+"\n"), 0600); err != nil {
-			return fmt.Errorf("writing check-in: %w", err)
+		targets, err := checkinTargets(cfg)
+		if err != nil {
+			return err
+		}
+
+		pushed, checkinErr := deadswitch.RecordCheckin(targets, now)
+		if checkinErr != nil && cfg.SyncTargets.DMSRemote == "" {
+			// No cloud DMS configured, so the only failure path is the local write.
+			return checkinErr
 		}
 
 		fmt.Printf("Check-in recorded: %s\n", now.Format(time.RFC3339))
-
 		nextDue := now.Add(time.Duration(cfg.CheckinInterval) * 24 * time.Hour)
 		fmt.Printf("Next check-in due by: %s\n", nextDue.Format("2006-01-02"))
 
-		// Auto-push to git if configured
+		if cfg.SyncTargets.DMSRemote != "" {
+			if pushed {
+				fmt.Println("Cloud dead man's switch updated.")
+			} else {
+				fmt.Fprintln(os.Stderr)
+				fmt.Fprintln(os.Stderr, "WARNING: the cloud dead man's switch did NOT receive this check-in.")
+				fmt.Fprintln(os.Stderr, "Once overdue it may fire while you are alive. Fix connectivity and run")
+				fmt.Fprintln(os.Stderr, "'kawarimi checkin' again, or 'kawarimi switch verify'.")
+				if checkinErr != nil {
+					fmt.Fprintf(os.Stderr, "Cause: %v\n", checkinErr)
+				}
+			}
+		}
+
+		// Auto-push the vault itself to its git remote (keeps legacy in-vault
+		// workflows and off-site backups current).
 		if cfg.SyncTargets.GitRemote != "" {
-			fmt.Println("Pushing check-in to git...")
+			fmt.Println("Pushing vault to git...")
 			gs := gosync.NewGitSync(cfg.VaultDir, cfg.SyncTargets.GitRemote, "")
 			if err := gs.Sync(); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: git sync failed: %v\n", err)

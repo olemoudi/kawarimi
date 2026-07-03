@@ -10,13 +10,15 @@ import (
 const (
 	AppDir     = ".kawarimi"
 	ConfigFile = "config.json"
+	// DMSRepoName is the local clone of the standalone dead man's switch heartbeat repo.
+	DMSRepoName = "dms-repo"
 )
 
 // Config holds non-sensitive application configuration.
 type Config struct {
-	VaultDir        string     `json:"vault_dir"`
-	CheckinInterval int        `json:"checkin_interval_days"`
-	AutoSync        AutoSync   `json:"auto_sync"`
+	VaultDir        string      `json:"vault_dir"`
+	CheckinInterval int         `json:"checkin_interval_days"`
+	AutoSync        AutoSync    `json:"auto_sync"`
 	SyncTargets     SyncTargets `json:"sync_targets"`
 }
 
@@ -28,6 +30,10 @@ type AutoSync struct {
 type SyncTargets struct {
 	GitRemote string `json:"git_remote,omitempty"`
 	USBPath   string `json:"usb_path,omitempty"`
+	// DMSRemote is the SSH URL of the standalone GitHub repo that hosts the dead
+	// man's switch workflow and heartbeat (last_checkin). Separate from GitRemote,
+	// which stores the vault itself.
+	DMSRemote string `json:"dms_remote,omitempty"`
 }
 
 // DefaultConfig returns a config with sensible defaults.
@@ -58,6 +64,16 @@ func ConfigPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(appDir, ConfigFile), nil
+}
+
+// DMSRepoDir returns the path to the local clone of the DMS heartbeat repo
+// (~/.kawarimi/dms-repo). The location is derived, not user-configurable.
+func DMSRepoDir() (string, error) {
+	appDir, err := AppDirPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(appDir, DMSRepoName), nil
 }
 
 // Load reads the config from disk.

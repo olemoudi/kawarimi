@@ -116,7 +116,12 @@ func hasPingChannel(cfg *SwitchConfig, channel string) bool {
 }
 
 // Evaluate runs the full switch evaluation: read check-in, determine stage, act.
-func Evaluate(vaultDir string, switchCfg *SwitchConfig, appDir string) error {
+// targets carries the vault dir plus the optional DMS repo so that auto check-ins
+// (Telegram /alive, IMAP ALIVE) propagate to the cloud heartbeat, not just the
+// local file.
+func Evaluate(targets CheckinTargets, switchCfg *SwitchConfig, appDir string) error {
+	vaultDir := targets.VaultDir
+
 	// Check if already triggered
 	triggeredPath := filepath.Join(appDir, "switch-triggered")
 	if _, err := os.Stat(triggeredPath); err == nil {
@@ -129,10 +134,7 @@ func Evaluate(vaultDir string, switchCfg *SwitchConfig, appDir string) error {
 		if err == nil {
 			alive, err := CheckForAlive(switchCfg.TelegramBotToken, switchCfg.TelegramChatID, lastCheckin)
 			if err == nil && alive {
-				// Auto check-in from Telegram
-				now := time.Now().UTC().Format(time.RFC3339)
-				checkinPath := filepath.Join(vaultDir, "last_checkin")
-				os.WriteFile(checkinPath, []byte(now), 0600)
+				autoCheckin(targets, "Telegram")
 			}
 		}
 	}
@@ -143,9 +145,7 @@ func Evaluate(vaultDir string, switchCfg *SwitchConfig, appDir string) error {
 		if err == nil {
 			alive, err := CheckIMAPForAlive(switchCfg, lastCheckin)
 			if err == nil && alive {
-				now := time.Now().UTC().Format(time.RFC3339)
-				checkinPath := filepath.Join(vaultDir, "last_checkin")
-				os.WriteFile(checkinPath, []byte(now), 0600)
+				autoCheckin(targets, "IMAP")
 			}
 		}
 	}
@@ -175,6 +175,15 @@ func Evaluate(vaultDir string, switchCfg *SwitchConfig, appDir string) error {
 	}
 
 	return nil
+}
+
+// autoCheckin records an auto check-in triggered by an ALIVE reply. It is
+// best-effort: a cloud push failure is logged to stderr (the systemd journal)
+// but does not abort evaluation.
+func autoCheckin(targets CheckinTargets, source string) {
+	if _, err := RecordCheckin(targets, time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "auto check-in from %s: cloud DMS push failed: %v\n", source, err)
+	}
 }
 
 // sendPing sends check-in reminders on all configured channels.
@@ -564,4 +573,3 @@ func LoadSwitchConfig(appDir string) (*SwitchConfig, error) {
 
 	return &cfg, nil
 }
-

@@ -12,32 +12,34 @@ import (
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/deadswitch"
 	"github.com/olemoudi/kawarimi/internal/tui/components"
-	"github.com/olemoudi/kawarimi/internal/vault"
 )
 
-// CheckInDoneMsg is sent after a successful check-in.
-type CheckInDoneMsg struct{}
+// CheckInDoneMsg is sent after a check-in attempt.
+type CheckInDoneMsg struct {
+	Pushed        bool // cloud DMS heartbeat was updated
+	DMSConfigured bool // a DMS remote is configured
+}
 
 // Switch is the dead man's switch dashboard.
 type Switch struct {
-	cfg          *config.Config
-	switchCfg    *deadswitch.SwitchConfig
-	configured   bool
-	lastCheckin  time.Time
-	daysSince    int
-	triggered    bool
-	statusBar    components.StatusBar
-	toast        components.Toast
-	err          string
-	width        int
-	height       int
+	cfg         *config.Config
+	switchCfg   *deadswitch.SwitchConfig
+	configured  bool
+	lastCheckin time.Time
+	daysSince   int
+	triggered   bool
+	statusBar   components.StatusBar
+	toast       components.Toast
+	err         string
+	width       int
+	height      int
 }
 
 // NewSwitch creates the switch dashboard.
 func NewSwitch(cfg *config.Config, width, height int) Switch {
 	s := Switch{
-		cfg:   cfg,
-		width: width,
+		cfg:    cfg,
+		width:  width,
 		height: height,
 		statusBar: components.NewStatusBar(
 			components.Hint("c", "check in"),
@@ -78,6 +80,12 @@ func (s Switch) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CheckInDoneMsg:
 		s.lastCheckin = time.Now().UTC()
 		s.daysSince = 0
+		if msg.DMSConfigured && !msg.Pushed {
+			return s, s.toast.Show("Checked in locally — DMS push FAILED", components.ToastError)
+		}
+		if msg.Pushed {
+			return s, s.toast.Show("Checked in (pushed to DMS)", components.ToastSuccess)
+		}
 		return s, s.toast.Show("Checked in successfully!", components.ToastSuccess)
 
 	case UnlockErrorMsg:
@@ -98,12 +106,20 @@ func (s Switch) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (s Switch) doCheckIn() tea.Cmd {
 	return func() tea.Msg {
-		checkinPath := filepath.Join(s.cfg.VaultDir, vault.LastCheckinFile)
-		now := time.Now().UTC().Format(time.RFC3339)
-		if err := os.WriteFile(checkinPath, []byte(now), 0600); err != nil {
+		dmsRepoDir, err := config.DMSRepoDir()
+		if err != nil {
 			return UnlockErrorMsg{Err: fmt.Errorf("check-in failed: %w", err)}
 		}
-		return CheckInDoneMsg{}
+		targets := deadswitch.CheckinTargets{
+			VaultDir:   s.cfg.VaultDir,
+			DMSRepoDir: dmsRepoDir,
+			DMSRemote:  s.cfg.SyncTargets.DMSRemote,
+		}
+		pushed, err := deadswitch.RecordCheckin(targets, time.Now())
+		if err != nil && s.cfg.SyncTargets.DMSRemote == "" {
+			return UnlockErrorMsg{Err: fmt.Errorf("check-in failed: %w", err)}
+		}
+		return CheckInDoneMsg{Pushed: pushed, DMSConfigured: s.cfg.SyncTargets.DMSRemote != ""}
 	}
 }
 

@@ -8,20 +8,27 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/deadswitch"
+	gosync "github.com/olemoudi/kawarimi/internal/sync"
 	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
 )
 
+var switchSeedForce bool
+
 func init() {
 	rootCmd.AddCommand(switchCmd)
 	switchCmd.AddCommand(switchSetupCmd)
+	switchCmd.AddCommand(switchSeedCmd)
 	switchCmd.AddCommand(switchTestCmd)
 	switchCmd.AddCommand(switchDisableCmd)
 	switchCmd.AddCommand(switchEvaluateCmd)
+
+	switchSeedCmd.Flags().BoolVar(&switchSeedForce, "force", false, "force-push the DMS repo (overwrites remote history; use to repair a diverged repo)")
 }
 
 var switchCmd = &cobra.Command{
@@ -287,26 +294,12 @@ var switchSetupCmd = &cobra.Command{
 		}
 
 		if useDMSKeyMode {
-			// V4: Generate DMS workflow with DMS key
-			dmsOutputDir := filepath.Join(appDir, "dms-workflow")
-			if err := deadswitch.GenerateGitHubDMSWorkflowFile(dmsOutputDir, switchCfg); err != nil {
-				return err
+			// V4: arm the standalone cloud DMS repo (workflow + seeded heartbeat + push).
+			fmt.Println("-- Arming the cloud dead man's switch --")
+			if err := runSwitchSeed(reader, cfg, switchCfg, false); err != nil {
+				fmt.Fprintf(os.Stderr, "\nCould not arm the cloud switch yet: %v\n", err)
+				fmt.Println("Create the empty DMS repo, then run 'kawarimi switch seed' to finish.")
 			}
-			fmt.Printf("GitHub Actions DMS workflow generated at:\n  %s\n", filepath.Join(dmsOutputDir, ".github", "workflows", "deadman.yml"))
-			fmt.Println()
-			fmt.Println("Create a SEPARATE GitHub repo for the DMS (not the vault storage repo!).")
-			fmt.Println("Copy the workflow file and configure these repo secrets:")
-			fmt.Println("  SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD")
-			fmt.Println("  USER_EMAIL, RECIPIENT_EMAILS")
-			fmt.Println("  DMS_KEY (the base64-encoded DMS key)")
-			fmt.Println("  VAULT_PACKAGE_LOCATION (where recipients download the vault)")
-			if switchCfg.TelegramBotToken != "" {
-				fmt.Println("  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
-			}
-			fmt.Println()
-			fmt.Println("The DMS key value to set as a secret:")
-			dmsKeyData, _ := os.ReadFile(dmsKeyPath)
-			fmt.Printf("  %s\n", strings.TrimSpace(string(dmsKeyData)))
 		} else if useSealedMode {
 			// V3 legacy: Generate DMS workflow with sealed payload
 			dmsOutputDir := filepath.Join(appDir, "dms-workflow")
@@ -419,6 +412,120 @@ var switchDisableCmd = &cobra.Command{
 	},
 }
 
+var switchSeedCmd = &cobra.Command{
+	Use:   "seed",
+	Short: "Arm or repair the cloud dead man's switch",
+	Long: `Pushes the dead man's switch workflow and a fresh heartbeat (last_checkin) to
+the standalone DMS GitHub repo, so the switch actually reads your check-ins.
+
+Run this once after 'kawarimi switch setup', and again any time you change
+switch settings or need to repair the repo (use --force if it has diverged).`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		appDir, err := config.AppDirPath()
+		if err != nil {
+			return err
+		}
+		if !deadswitch.IsSwitchConfigured(appDir) {
+			return fmt.Errorf("switch not configured — run 'kawarimi switch setup' first")
+		}
+		switchCfg, err := deadswitch.LoadSwitchConfig(appDir)
+		if err != nil {
+			return err
+		}
+		reader := bufio.NewReader(os.Stdin)
+		return runSwitchSeed(reader, cfg, switchCfg, switchSeedForce)
+	},
+}
+
+// runSwitchSeed writes the workflow + a seeded heartbeat + README into the local
+// DMS repo clone and pushes them to the configured DMS remote. It is idempotent:
+// safe to run repeatedly to arm or repair the switch. reader is shared with the
+// caller so it can prompt for the DMS remote without a second os.Stdin buffer.
+func runSwitchSeed(reader *bufio.Reader, cfg *config.Config, switchCfg *deadswitch.SwitchConfig, force bool) error {
+	if cfg.SyncTargets.DMSRemote == "" {
+		fmt.Println("The dead man's switch needs its OWN GitHub repo, separate from the vault repo.")
+		fmt.Println("Create a new PRIVATE, EMPTY repo (no README, no .gitignore), then paste its SSH URL.")
+		remote := promptLine(reader, "DMS repo SSH URL (git@github.com:you/dms.git): ")
+		if remote == "" {
+			return fmt.Errorf("a DMS repo SSH URL is required to arm the cloud switch")
+		}
+		cfg.SyncTargets.DMSRemote = remote
+		if err := config.Save(cfg); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
+	}
+
+	dmsRepoDir, err := config.DMSRepoDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dmsRepoDir, 0700); err != nil {
+		return fmt.Errorf("creating DMS repo dir: %w", err)
+	}
+
+	gs := gosync.NewGitSync(dmsRepoDir, cfg.SyncTargets.DMSRemote, "")
+	// Build on top of whatever is already on the remote (best effort).
+	if err := gs.ResetToRemote(); err != nil {
+		return fmt.Errorf("syncing DMS repo from remote: %w", err)
+	}
+
+	if err := deadswitch.GenerateGitHubDMSWorkflowFile(dmsRepoDir, switchCfg); err != nil {
+		return err
+	}
+	stamp := time.Now().UTC().Format(time.RFC3339)
+	if err := os.WriteFile(filepath.Join(dmsRepoDir, "last_checkin"), []byte(stamp+"\n"), 0644); err != nil {
+		return fmt.Errorf("writing heartbeat: %w", err)
+	}
+	readme := "# Kawarimi dead man's switch\n\nHeartbeat repo — do not delete.\n`last_checkin` is updated automatically by `kawarimi checkin`.\n"
+	if err := os.WriteFile(filepath.Join(dmsRepoDir, "README.md"), []byte(readme), 0644); err != nil {
+		return fmt.Errorf("writing README: %w", err)
+	}
+
+	if force {
+		if _, err := gs.Commit("seed dead man's switch " + stamp); err != nil {
+			return err
+		}
+		if err := gs.ForcePush(); err != nil {
+			return fmt.Errorf("force pushing DMS repo: %w", err)
+		}
+	} else {
+		if err := gs.CommitAndPush("seed dead man's switch " + stamp); err != nil {
+			return fmt.Errorf("pushing DMS repo (if it already has commits, retry with --force): %w", err)
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("Cloud dead man's switch armed.")
+	fmt.Printf("  DMS repo:    %s\n", cfg.SyncTargets.DMSRemote)
+	fmt.Printf("  Local clone: %s\n", dmsRepoDir)
+	fmt.Println()
+	fmt.Println("In the DMS GitHub repo (Settings -> Secrets and variables -> Actions), set:")
+	fmt.Println("  SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD")
+	fmt.Println("  USER_EMAIL, RECIPIENT_EMAILS")
+	fmt.Println("  DMS_KEY, VAULT_PACKAGE_LOCATION")
+	if switchCfg.TelegramBotToken != "" {
+		fmt.Println("  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
+	}
+
+	appDir, err := config.AppDirPath()
+	if err == nil {
+		if data, rerr := os.ReadFile(filepath.Join(appDir, "dms-key")); rerr == nil {
+			fmt.Println()
+			fmt.Println("DMS_KEY value to set as the secret above:")
+			fmt.Printf("  %s\n", strings.TrimSpace(string(data)))
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("Enable the GitHub Actions workflow in the repo, then confirm with:")
+	fmt.Println("  kawarimi switch verify")
+	return nil
+}
+
 var switchEvaluateCmd = &cobra.Command{
 	Use:    "evaluate",
 	Short:  "Evaluate the switch (called by systemd timer)",
@@ -443,8 +550,27 @@ var switchEvaluateCmd = &cobra.Command{
 			return err
 		}
 
-		return deadswitch.Evaluate(cfg.VaultDir, switchCfg, appDir)
+		targets, err := checkinTargets(cfg)
+		if err != nil {
+			return err
+		}
+
+		return deadswitch.Evaluate(targets, switchCfg, appDir)
 	},
+}
+
+// checkinTargets builds the check-in destinations from config: always the local
+// vault, plus the DMS heartbeat repo when a DMS remote is configured.
+func checkinTargets(cfg *config.Config) (deadswitch.CheckinTargets, error) {
+	dmsRepoDir, err := config.DMSRepoDir()
+	if err != nil {
+		return deadswitch.CheckinTargets{}, err
+	}
+	return deadswitch.CheckinTargets{
+		VaultDir:   cfg.VaultDir,
+		DMSRepoDir: dmsRepoDir,
+		DMSRemote:  cfg.SyncTargets.DMSRemote,
+	}, nil
 }
 
 func readLine(reader *bufio.Reader) string {
