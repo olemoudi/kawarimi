@@ -2,9 +2,8 @@ version: 2
 
 project_name: kawarimi
 
-before:
-  hooks:
-    - go mod tidy
+# No before-hooks: dependencies are vendored, and a `go mod tidy` that touched
+# go.mod would make the release build dirty.
 
 builds:
   - env:
@@ -34,3 +33,20 @@ checksum:
 
 release:
   draft: true
+  footer: |
+    ---
+    **Which file do I download?** / **¿Qué archivo descargo?**
+
+    | | |
+    | --- | --- |
+    | Windows | `kawarimi-windows-amd64.exe` |
+    | Mac (Apple Silicon, 2021+) | `kawarimi-darwin-arm64` |
+    | Mac (Intel) | `kawarimi-darwin-amd64` |
+    | Linux | `kawarimi-linux-amd64` / `kawarimi-linux-arm64` |
+
+    The binaries are unsigned: on **Windows**, if SmartScreen warns, choose
+    *More info → Run anyway*; on **macOS**, right-click → *Open* (or System
+    Settings → Privacy & Security → *Open Anyway*). En **Windows**, si aparece
+    SmartScreen elige *Más información → Ejecutar de todas formas*; en **macOS**,
+    clic derecho → *Abrir* (o Ajustes del Sistema → Privacidad y seguridad →
+    *Abrir de todas formas*). See the [README](https://github.com/olemoudi/kawarimi#readme).
