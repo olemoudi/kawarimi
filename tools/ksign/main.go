@@ -10,6 +10,7 @@ package main
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -19,29 +20,31 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: ksign <artifact> <signature-out>")
 		os.Exit(2)
 	}
-	artifact, sigOut := os.Args[1], os.Args[2]
+	if err := run(os.Args[1], os.Args[2]); err != nil {
+		fmt.Fprintf(os.Stderr, "ksign: %v\n", err)
+		os.Exit(1)
+	}
+}
 
+func run(artifact, sigOut string) error {
 	seedB64 := os.Getenv("RELEASE_SIGNING_KEY")
 	if seedB64 == "" {
-		fmt.Fprintln(os.Stderr, "ksign: RELEASE_SIGNING_KEY is not set — cannot sign the release.")
-		fmt.Fprintln(os.Stderr, "Set it as a repository Actions secret (base64 of the 32-byte Ed25519 seed).")
-		os.Exit(1)
+		return errors.New("RELEASE_SIGNING_KEY is not set — cannot sign the release.\n" +
+			"Set it as a repository Actions secret (base64 of the 32-byte Ed25519 seed).")
 	}
 	seed, err := base64.StdEncoding.DecodeString(seedB64)
 	if err != nil || len(seed) != ed25519.SeedSize {
-		fmt.Fprintln(os.Stderr, "ksign: RELEASE_SIGNING_KEY must be base64 of a 32-byte Ed25519 seed")
-		os.Exit(1)
+		return errors.New("RELEASE_SIGNING_KEY must be base64 of a 32-byte Ed25519 seed")
 	}
 	priv := ed25519.NewKeyFromSeed(seed)
 
 	data, err := os.ReadFile(artifact)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ksign: reading %s: %v\n", artifact, err)
-		os.Exit(1)
+		return fmt.Errorf("reading %s: %w", artifact, err)
 	}
 	sig := ed25519.Sign(priv, data)
 	if err := os.WriteFile(sigOut, []byte(base64.StdEncoding.EncodeToString(sig)+"\n"), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "ksign: writing %s: %v\n", sigOut, err)
-		os.Exit(1)
+		return fmt.Errorf("writing %s: %w", sigOut, err)
 	}
+	return nil
 }

@@ -148,11 +148,14 @@ func Latest(ctx context.Context, currentVersion string) (rel Release, available 
 
 // Apply downloads, verifies, and installs rel over exePath. It returns only after
 // the running binary has been replaced; the caller must instruct the user to
-// restart. exePath defaults to os.Executable() when empty.
-func Apply(ctx context.Context, rel Release) error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("locating current binary: %w", err)
+// restart. exePath defaults to os.Executable() when empty (tests pass a temp file).
+func Apply(ctx context.Context, rel Release, exePath string) error {
+	if exePath == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("locating current binary: %w", err)
+		}
+		exePath = exe
 	}
 	exePath, _ = filepath.EvalSymlinks(exePath)
 

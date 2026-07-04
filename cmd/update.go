@@ -63,7 +63,7 @@ opening a vault package never does.`,
 		}
 
 		fmt.Println("Downloading and verifying the update…")
-		if err := selfupdate.Apply(ctx, rel); err != nil {
+		if err := selfupdate.Apply(ctx, rel, ""); err != nil {
 			return fmt.Errorf("installing the update: %w", err)
 		}
 		fmt.Printf("Updated to v%s. Restart kawarimi to use the new version.\n", rel.Version)
