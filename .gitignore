@@ -10,3 +10,8 @@
 *.out
 coverage.txt
 coverage.html
+
+# Release signing private key (NEVER commit; lives as the RELEASE_SIGNING_KEY secret)
+release-signing-key*
+*.pem
+*.key

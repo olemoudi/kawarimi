@@ -31,6 +31,17 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# Ed25519-sign checksums.txt with the maintainer's key (RELEASE_SIGNING_KEY secret,
+# inherited from the environment) using the in-repo pure-Go signer. selfupdate
+# verifies this signature against the baked-in public key before installing an
+# update. Local snapshot builds without the key: pass `--skip=sign`.
+signs:
+  - id: checksums
+    artifacts: checksum
+    signature: "${artifact}.sig"
+    cmd: go
+    args: ["run", "./tools/ksign", "${artifact}", "${signature}"]
+
 release:
   draft: true
   footer: |

@@ -208,6 +208,13 @@ const I18N = {
     wDoneTitle: "You're all set",
     wDoneSub: "Your vault is created and the cloud dead man's switch is armed. Add entries and check in from the dashboard. Remember to hand each recipient their card and to upload the package to its location.",
     goDashboard: "Go to dashboard",
+
+    updateAvailable: "Update available: v{0}",
+    updateNow: "Update now",
+    whatsNew: "What's new",
+    updating: "Updating…",
+    updatedRestart: "Updated to v{0}. Close kawarimi and open it again to use the new version.",
+    updateFailed: "Update failed: {0}",
   },
 
   es: {
@@ -367,6 +374,13 @@ const I18N = {
     wDoneTitle: "Todo listo",
     wDoneSub: "Tu caja fuerte está creada y el interruptor de la nube está armado. Añade contenido y da señales de vida desde el panel. Recuerda entregar a cada destinatario su tarjeta y subir el paquete a su ubicación.",
     goDashboard: "Ir al panel",
+
+    updateAvailable: "Actualización disponible: v{0}",
+    updateNow: "Actualizar ahora",
+    whatsNew: "Novedades",
+    updating: "Actualizando…",
+    updatedRestart: "Actualizado a v{0}. Cierra kawarimi y ábrelo de nuevo para usar la nueva versión.",
+    updateFailed: "La actualización falló: {0}",
   },
 };
 
@@ -557,6 +571,7 @@ function viewDashboard() {
     fact(t("factVault"), state.vaultDir || "—", true));
 
   setView(appShell("dashboard",
+    updateBanner(),
     h("div", { class: "card" },
       h("p", { class: "eyebrow" }, t("eyebrowStatus")),
       h("div", { class: "switch-state" },
@@ -573,6 +588,42 @@ function viewDashboard() {
           : null),
       facts)
   ));
+
+  // First time we land on the dashboard, check for an update and re-render if one
+  // is found (keeps the initial paint instant).
+  if (updateInfo === null) {
+    checkForUpdate().then(() => { if (nav === "dashboard") viewDashboard(); });
+  }
+}
+
+let updateInfo = null; // {available, version, url}; null = not checked yet this session
+
+async function checkForUpdate() {
+  try { updateInfo = await api("/api/update/check"); }
+  catch (_) { updateInfo = { available: false }; }
+  return updateInfo;
+}
+
+function updateBanner() {
+  if (!updateInfo || !updateInfo.available) return null;
+  return h("div", { class: "update-banner" },
+    h("span", { class: "ub-dot" }),
+    h("span", { class: "ub-text" }, fmt(t("updateAvailable"), updateInfo.version)),
+    updateInfo.url ? h("a", { class: "ub-link", href: updateInfo.url, target: "_blank", rel: "noreferrer" }, t("whatsNew")) : null,
+    h("span", { class: "spacer" }),
+    h("button", { class: "btn btn-sm", type: "button", onclick: doUpdate }, t("updateNow")));
+}
+
+async function doUpdate(e) {
+  const btn = e.target; btn.disabled = true; btn.textContent = t("updating");
+  try {
+    const r = await api("/api/update/apply", { method: "POST" });
+    if (r.restart) toast(fmt(t("updatedRestart"), r.version));
+    else { updateInfo = { available: false }; if (nav === "dashboard") viewDashboard(); }
+  } catch (ex) {
+    toast(fmt(t("updateFailed"), ex.message), true);
+    btn.disabled = false; btn.textContent = t("updateNow");
+  }
 }
 
 function fact(k, v, wide) {

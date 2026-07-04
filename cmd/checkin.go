@@ -81,6 +81,7 @@ var checkinCmd = &cobra.Command{
 			}
 		}
 
+		printUpdateHintFromCache()
 		return nil
 	},
 }

@@ -31,6 +31,8 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("/api/quit", s.requireSession(s.handleQuit))
 	mux.HandleFunc("/api/checkin", s.requireSession(s.handleCheckin))
 	mux.HandleFunc("/api/switch/verify", s.requireSession(s.handleSwitchVerify))
+	mux.HandleFunc("/api/update/check", s.requireSession(s.handleUpdateCheck))
+	mux.HandleFunc("/api/update/apply", s.requireSession(s.handleUpdateApply))
 
 	// Setup wizard
 	mux.HandleFunc("/api/init", s.requireSession(s.handleInit))

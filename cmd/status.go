@@ -81,6 +81,7 @@ var statusCmd = &cobra.Command{
 			fmt.Println("  USB: not configured")
 		}
 
+		refreshUpdateHint()
 		return nil
 	},
 }
