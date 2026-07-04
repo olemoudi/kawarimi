@@ -193,9 +193,17 @@ possibly years later — so testing is not negotiable. Do not spare on it.
   switch, the key-split, the release paths, or the setup/GUI flow, add or update a
   scenario there — a change to disclosure behavior without a lifecycle test is a
   bug in the change.
-- The one thing `go test` cannot run is the GitHub Actions workflow YAML itself;
-  cover it with the golden/invariant tests in `internal/deadswitch` and prove the
-  delivered `DMS_KEY` opens the vault (see the cloud-automation test).
+- **The generated workflow's bash DOES run in tests.** `testenv.RunDMSWorkflow` is
+  a mini Actions runner: it parses the generated `deadman.yml`, resolves
+  `${{ secrets.* }}`, evaluates the `if:` guards, and executes each `run:` script
+  under bash with `curl` shimmed to capture the emails. The flagship
+  `TestStory_OwnerDiesRecipientOpensVault` (internal/lifecycle) role-plays the
+  whole product through real artifacts: owner arms + packages + goes silent, the
+  workflow releases the key at day-N, attacker negatives fail, and the recipient
+  wizard opens the vault with the key parsed from the captured email. If you touch
+  the workflow template, the story test and the golden/invariant tests in
+  `internal/deadswitch` must both stay green. The only thing left outside `go
+  test` is GitHub's scheduler itself.
 
 ## Documentation
 

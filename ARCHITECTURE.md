@@ -469,9 +469,14 @@ Three kinds of migration keep an install current:
 - **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): on push to
   `main` and all PRs — gofmt check, `go vet`, `go build`, `go test -short` on
   Go 1.25. Actions **pinned to commit SHAs**, `permissions: contents: read`.
-  A main-only `coverage` job runs the full suite with a coverprofile, renders a
+  A main-only `coverage` job runs the full suite with `-coverpkg=./...` (so the
+  end-to-end lifecycle scenarios credit the packages they exercise), renders a
   self-contained badge SVG, and force-pushes it to the `badges` branch (no
   external coverage service); the READMEs embed it from raw.githubusercontent.
+  The generated DMS workflow's bash is itself executed in tests by a mini Actions
+  runner in `internal/testenv` (parse steps, resolve secrets, evaluate `if:`
+  guards, shim `curl`), so the release decision logic is covered end to end; only
+  GitHub's scheduler is outside `go test`.
 - **Releases** ([`.github/workflows/release.yml`](.github/workflows/release.yml)):
   pushing a `v*` tag runs goreleaser and publishes a **draft** GitHub release
   with the five per-platform binaries + `checksums.txt` (raw binaries, so the
