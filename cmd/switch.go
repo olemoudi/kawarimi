@@ -13,7 +13,7 @@ import (
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/deadswitch"
-	gosync "github.com/olemoudi/kawarimi/internal/sync"
+	"github.com/olemoudi/kawarimi/internal/setup"
 	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
 )
@@ -199,20 +199,14 @@ var switchSetupCmd = &cobra.Command{
 			fmt.Println("surface: a compromise here plus a recipient card could open the vault while")
 			fmt.Println("you are alive.")
 			ans := promptLine(reader, "Also allow final release from THIS machine? [y/N]: ")
-			if strings.HasPrefix(strings.ToLower(ans), "y") {
-				dmsKeyBase64, err := os.ReadFile(dmsKeyPath)
-				if err != nil {
-					return fmt.Errorf("reading DMS key: %w", err)
-				}
-				if err := deadswitch.StoreSwitchDMSKey(appDir, strings.TrimSpace(string(dmsKeyBase64))); err != nil {
-					return err
-				}
+			localRelease := strings.HasPrefix(strings.ToLower(ans), "y")
+			if err := setup.StoreSwitchPayloadForMode(appDir, localRelease); err != nil {
+				return err
+			}
+			if localRelease {
 				fmt.Println("This machine will also deliver the key. The key is stored locally, so protect")
 				fmt.Println("this machine (full-disk encryption strongly recommended).")
 			} else {
-				if err := deadswitch.StoreSwitchCloudOnly(appDir); err != nil {
-					return err
-				}
 				fmt.Println("Cloud-only: this machine holds no DMS key; the cloud delivers it.")
 			}
 		} else {
@@ -365,67 +359,30 @@ switch settings or need to repair the repo (use --force if it has diverged).`,
 	},
 }
 
-// runSwitchSeed writes the workflow + a seeded heartbeat + README into the local
-// DMS repo clone and pushes them to the configured DMS remote. It is idempotent:
-// safe to run repeatedly to arm or repair the switch. reader is shared with the
-// caller so it can prompt for the DMS remote without a second os.Stdin buffer.
+// runSwitchSeed prompts for the DMS remote if needed, then arms/repairs the cloud
+// switch via setup.SeedSwitch and prints the follow-up checklist. It is idempotent:
+// safe to run repeatedly. reader is shared with the caller so it can prompt for the
+// DMS remote without a second os.Stdin buffer.
 func runSwitchSeed(reader *bufio.Reader, cfg *config.Config, switchCfg *deadswitch.SwitchConfig, force bool) error {
-	if cfg.SyncTargets.DMSRemote == "" {
+	remote := cfg.SyncTargets.DMSRemote
+	if remote == "" {
 		fmt.Println("The dead man's switch needs its OWN GitHub repo, separate from the vault repo.")
 		fmt.Println("Create a new PRIVATE, EMPTY repo (no README, no .gitignore), then paste its SSH URL.")
-		remote := promptLine(reader, "DMS repo SSH URL (git@github.com:you/dms.git): ")
+		remote = promptLine(reader, "DMS repo SSH URL (git@github.com:you/dms.git): ")
 		if remote == "" {
 			return fmt.Errorf("a DMS repo SSH URL is required to arm the cloud switch")
 		}
-		cfg.SyncTargets.DMSRemote = remote
-		if err := config.Save(cfg); err != nil {
-			return fmt.Errorf("saving config: %w", err)
-		}
 	}
 
-	dmsRepoDir, err := config.DMSRepoDir()
+	res, err := setup.SeedSwitch(cfg, switchCfg, remote, force)
 	if err != nil {
 		return err
-	}
-	if err := os.MkdirAll(dmsRepoDir, 0700); err != nil {
-		return fmt.Errorf("creating DMS repo dir: %w", err)
-	}
-
-	gs := gosync.NewGitSync(dmsRepoDir, cfg.SyncTargets.DMSRemote, "")
-	// Build on top of whatever is already on the remote (best effort).
-	if err := gs.ResetToRemote(); err != nil {
-		return fmt.Errorf("syncing DMS repo from remote: %w", err)
-	}
-
-	if err := deadswitch.GenerateGitHubDMSWorkflowFile(dmsRepoDir, switchCfg); err != nil {
-		return err
-	}
-	stamp := time.Now().UTC().Format(time.RFC3339)
-	if err := os.WriteFile(filepath.Join(dmsRepoDir, "last_checkin"), []byte(stamp+"\n"), 0644); err != nil {
-		return fmt.Errorf("writing heartbeat: %w", err)
-	}
-	readme := "# Kawarimi dead man's switch\n\nHeartbeat repo — do not delete.\n`last_checkin` is updated automatically by `kawarimi checkin`.\n"
-	if err := os.WriteFile(filepath.Join(dmsRepoDir, "README.md"), []byte(readme), 0644); err != nil {
-		return fmt.Errorf("writing README: %w", err)
-	}
-
-	if force {
-		if _, err := gs.Commit("seed dead man's switch " + stamp); err != nil {
-			return err
-		}
-		if err := gs.ForcePush(); err != nil {
-			return fmt.Errorf("force pushing DMS repo: %w", err)
-		}
-	} else {
-		if err := gs.CommitAndPush("seed dead man's switch " + stamp); err != nil {
-			return fmt.Errorf("pushing DMS repo (if it already has commits, retry with --force): %w", err)
-		}
 	}
 
 	fmt.Println()
 	fmt.Println("Cloud dead man's switch armed.")
-	fmt.Printf("  DMS repo:    %s\n", cfg.SyncTargets.DMSRemote)
-	fmt.Printf("  Local clone: %s\n", dmsRepoDir)
+	fmt.Printf("  DMS repo:    %s\n", res.DMSRemote)
+	fmt.Printf("  Local clone: %s\n", res.LocalClone)
 	fmt.Println()
 	fmt.Println("In the DMS GitHub repo (Settings -> Secrets and variables -> Actions), set:")
 	fmt.Println("  SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD")
@@ -435,20 +392,17 @@ func runSwitchSeed(reader *bufio.Reader, cfg *config.Config, switchCfg *deadswit
 		fmt.Println("  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID")
 	}
 
-	appDir, err := config.AppDirPath()
-	if err == nil {
-		if data, rerr := os.ReadFile(filepath.Join(appDir, "dms-key")); rerr == nil {
-			fmt.Println()
-			fmt.Println("DMS_KEY value to set as the secret above:")
-			fmt.Printf("  %s\n", strings.TrimSpace(string(data)))
-		}
+	if res.DMSKeyValue != "" {
+		fmt.Println()
+		fmt.Println("DMS_KEY value to set as the secret above:")
+		fmt.Printf("  %s\n", res.DMSKeyValue)
 	}
 
 	fmt.Println()
 	fmt.Println("Enable the GitHub Actions workflow in the repo, then confirm with:")
 	fmt.Println("  kawarimi switch verify")
 
-	if err == nil && deadswitch.SwitchIsCloudOnly(appDir) {
+	if appDir, aerr := config.AppDirPath(); aerr == nil && deadswitch.SwitchIsCloudOnly(appDir) {
 		offerDeleteLocalDMSKey(reader, appDir)
 	}
 	return nil
@@ -532,7 +486,7 @@ Requires your 8 mnemonic words (paper backup) to re-seal; they are not stored.`,
 			}
 		}
 
-		dmsKeyB64, err := sealAndInstallV4(cfg.VaultDir, appDir, entropy, passphrase)
+		dmsKeyB64, err := setup.SealAndInstallV4(cfg.VaultDir, appDir, entropy, passphrase)
 		if err != nil {
 			return err
 		}

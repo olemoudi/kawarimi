@@ -11,7 +11,7 @@ does not repeat the quickstart.
 > **Keeping this current:** when you change the architecture, security design,
 > the dead man's switch flow, the package layout, an on-disk format, or the
 > usage flow, update this file **and** [docs/usage-flow.md](docs/usage-flow.md)
-> in the same change. See [§15](#15-keeping-this-document-current).
+> in the same change. See [§16](#16-keeping-this-document-current).
 
 ---
 
@@ -65,10 +65,13 @@ so double-clicking the binary inside an extracted package "just works".
 
 | Path | Responsibility |
 | --- | --- |
-| `cmd/` | Cobra command layer, one file per command (`init`, `add`, `list`, `show`, `edit`, `remove`, `export`, `status`, `verify`, `passwd`, `migrate`, `open`, `tui`, `sync`, `checkin`, `device`, `switch`, `package`) |
-| `internal/vault/` | The vault model: multi-slot key header, entries, manifest, packaging, V4 sealed-open, v1→v2 migration, device enrollment |
+| `cmd/` | Cobra command layer, one file per command (`init`, `add`, `list`, `show`, `edit`, `remove`, `export`, `status`, `verify`, `passwd`, `migrate`, `open`, `tui`, `gui`, `sync`, `checkin`, `device`, `switch`, `package`) |
+| `internal/vault/` | The vault model: multi-slot key header, entries, manifest, packaging, recipient cross-compile, V4 sealed-open, v1→v2 migration, device enrollment |
 | `internal/crypto/` | All cryptographic primitives (age wrappers, Argon2id + HKDF, AES-GCM keywrap, mnemonic, recovery code, recipient passphrase, device key, V4 sealing, memory zeroing) |
 | `internal/deadswitch/` | The DMS engine: stage evaluation & release, check-in + heartbeat push, GitHub Actions workflow generation, systemd units, SMTP/Telegram/IMAP, health verification |
+| `internal/setup/` | Onboarding orchestration (`InitVault`, `SealAndInstallV4`, `StoreSwitchPayloadForMode`, `SeedSwitch`) shared by the CLI and the GUI so the two cannot drift |
+| `internal/github/` | Minimal GitHub REST client: create the private DMS repo, set Actions secrets (sealed with `nacl/box`) — pure `net/http`, no CGo |
+| `internal/gui/` | The browser owner console: a loopback HTTP server + embedded SPA + JSON API over the same `internal/*` APIs (see §11) |
 | `internal/sync/` | `git.go` (go-git push/fetch/reset over SSH) and `usb.go` (copy to USB) |
 | `internal/config/` | Non-sensitive JSON config at `~/.kawarimi/config.json`; derives app-dir and DMS-clone paths |
 | `internal/recipient/` | The bilingual, plain-stdin recipient wizard |
@@ -332,7 +335,53 @@ non-wizard equivalent is `export --sealed`.
 
 ---
 
-## 11. Versioned evolution
+## 11. The browser GUI (owner console)
+
+`kawarimi gui` ([`cmd/gui.go`](cmd/gui.go), [`internal/gui/`](internal/gui/))
+starts a **local web server bound to `127.0.0.1`** and opens the default browser
+to a single-page owner console. It is the beginner-friendly path to everything the
+CLI does: a wizard to create a vault, arm the cloud dead man's switch, and build
+the recipient package, plus day-to-day entry management and check-ins. It stays
+pure-Go and CGo-free — the SPA (`internal/gui/web/*`) is compiled in with
+`//go:embed`, so the single-binary, cross-compile-from-one-machine model is
+unchanged.
+
+**One shared code path.** The GUI does *not* re-implement setup. It calls the same
+`internal/setup` orchestration the CLI uses (`InitVault`, `StoreSwitchPayloadForMode`,
+`SeedSwitch`) plus `internal/vault`, `internal/deadswitch`, and `internal/github`.
+The JSON API (`/api/init`, `/api/switch/setup`, `/api/switch/cloud`,
+`/api/package/build`, `/api/entries…`, `/api/checkin`, `/api/switch/verify`) is a
+thin adapter over those functions.
+
+**Cloud automation (the one new capability).** Unlike the CLI's guided-manual flow,
+the GUI's cloud step uses a GitHub personal access token to *create* the private
+DMS repo and *set* its Actions secrets via the API. Secrets are encrypted client-side
+with libsodium sealed boxes (`nacl/box.SealAnonymous`) against the repo's public key
+before upload. It then calls `SeedSwitch` to push the workflow + heartbeat over SSH
+(so the owner's SSH key must be registered with GitHub). In the default cloud-only
+mode the local `dms-key` is deleted once the GitHub secret is set.
+
+**Security model** (the server handles secrets, so this matters):
+
+- **Loopback only** — binds `127.0.0.1` on a random ephemeral port; never `0.0.0.0`.
+- **Per-session token** — a 256-bit token in the launch URL is exchanged for an
+  `HttpOnly; SameSite=Strict` cookie and checked on every request with a
+  constant-time compare, so other local users/pages cannot drive the API.
+- **DNS-rebinding defense** — requests are rejected unless `Host` is
+  `127.0.0.1:<port>`/`localhost:<port>`; mutating requests also check `Origin`.
+- **Strict CSP + embedded assets** — `default-src 'none'` with `script/connect-src
+  'self'` and no external hosts, so a hostile page cannot exfiltrate.
+- **Transient secrets** — the GitHub token lives only in memory for the cloud step;
+  the mnemonic/recovery/recipient-passphrase are shown once and never logged; unlock
+  still goes through the device-key owner slot. No new on-disk formats are introduced.
+- **Auto-shutdown** — a keepalive ping keeps the server alive while the tab is open;
+  it exits on idle, on `Quit`, or on Ctrl-C.
+
+The existing Bubble Tea `kawarimi tui` is unchanged and complementary.
+
+---
+
+## 12. Versioned evolution
 
 The code carries backward-compatible generations, dispatched by a payload prefix
 in `triggerFinalRelease` (`internal/deadswitch/switch.go`). The **current default
@@ -352,7 +401,7 @@ see [`internal/vault/migrate.go`](internal/vault/migrate.go).
 
 ---
 
-## 12. Build, CI, release
+## 13. Build, CI, release
 
 - **Build** ([`Makefile`](Makefile)): `make build` (version stamped from
   `git describe` via `-ldflags -X …cmd.version`), `make test`
@@ -368,7 +417,7 @@ see [`internal/vault/migrate.go`](internal/vault/migrate.go).
 
 ---
 
-## 13. Threat model
+## 14. Threat model
 
 See [README.md §Threat model](README.md#threat-model-summary) for the
 attacker-scenario summary. At the code level, the following invariants are
@@ -389,7 +438,7 @@ enforced by tests and should stay true across changes:
 
 ---
 
-## 14. Usage flow
+## 15. Usage flow
 
 The full owner-to-recipient lifecycle. The canonical copy of this diagram
 (plus a supplementary key-split view) lives in
@@ -445,7 +494,7 @@ sequenceDiagram
 
 ---
 
-## 15. Keeping this document current
+## 16. Keeping this document current
 
 This file is only useful if it stays true. When a change touches an area below,
 update the named section here **and** [docs/usage-flow.md](docs/usage-flow.md) in
@@ -459,7 +508,8 @@ the same commit (the CLAUDE.md "Documentation" rule enforces this):
 | DMS stages, thresholds, workflow, or channels | §7, and the diagram |
 | device enrollment | §8 |
 | on-disk files / the two-repo split | §5, §9 |
-| a payload prefix / a new generation | §11 |
-| build, CI, or release config | §12 |
-| a security invariant / test | §13 |
-| the owner or recipient flow | §14 + `docs/usage-flow.md` (keep both diagrams byte-identical) |
+| the browser GUI (server, security, or an API endpoint) | §11 |
+| a payload prefix / a new generation | §12 |
+| build, CI, or release config | §13 |
+| a security invariant / test | §14 |
+| the owner or recipient flow | §15 + `docs/usage-flow.md` (keep both diagrams byte-identical) |

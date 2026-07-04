@@ -2,8 +2,12 @@
 
 Canonical diagrams for how kawarimi is used end to end. The **lifecycle sequence
 diagram** below is the primary one and is embedded (byte-identical) in
-[ARCHITECTURE.md §14](../ARCHITECTURE.md#14-usage-flow) — keep the two copies in
+[ARCHITECTURE.md §15](../ARCHITECTURE.md#15-usage-flow) — keep the two copies in
 sync. See [ARCHITECTURE.md](../ARCHITECTURE.md) for the full technical design.
+
+The same setup lifecycle can be driven from the CLI (the commands below) or the
+browser wizard (`kawarimi gui`, [ARCHITECTURE.md §11](../ARCHITECTURE.md#11-the-browser-gui-owner-console));
+both call the same `internal/setup` orchestration, so the steps are identical.
 
 Both diagrams use plain Mermaid and render directly on GitHub.
 

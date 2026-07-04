@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -111,7 +110,7 @@ func resolvePackageBinaries() (dir string, cleanup func(), err error) {
 		if err != nil {
 			return "", nil, err
 		}
-		built, err := crossCompile(src, tmp)
+		built, err := vault.CrossCompile(src, tmp, version)
 		if err != nil {
 			os.RemoveAll(tmp)
 			return "", nil, fmt.Errorf("cross-compiling: %w", err)
@@ -150,43 +149,4 @@ func kawarimiBinariesIn(dir string) []string {
 		}
 	}
 	return names
-}
-
-// buildTarget is one cross-compilation target.
-type buildTarget struct {
-	goos, goarch, suffix string
-}
-
-func (t buildTarget) binaryName() string {
-	return fmt.Sprintf("kawarimi-%s-%s%s", t.goos, t.goarch, t.suffix)
-}
-
-// crossCompileTargets is the set of platforms shipped to recipients.
-func crossCompileTargets() []buildTarget {
-	return []buildTarget{
-		{"linux", "amd64", ""},
-		{"linux", "arm64", ""},
-		{"darwin", "amd64", ""},
-		{"darwin", "arm64", ""},
-		{"windows", "amd64", ".exe"},
-	}
-}
-
-// crossCompile builds a static kawarimi binary for every target into outDir and
-// returns the names it produced.
-func crossCompile(sourceDir, outDir string) ([]string, error) {
-	ldflags := "-s -w -X github.com/olemoudi/kawarimi/cmd.version=" + version
-	var built []string
-	for _, t := range crossCompileTargets() {
-		name := t.binaryName()
-		out := filepath.Join(outDir, name)
-		cmd := exec.Command("go", "build", "-trimpath", "-ldflags", ldflags, "-o", out, ".")
-		cmd.Dir = sourceDir
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+t.goos, "GOARCH="+t.goarch)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("building %s: %w\n%s", name, err, out)
-		}
-		built = append(built, name)
-	}
-	return built, nil
 }

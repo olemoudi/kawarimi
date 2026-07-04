@@ -180,8 +180,8 @@ usage-flow diagram. Keep them current:
 - Whenever a change alters the architecture, security design, the dead man's
   switch flow, the package layout, an on-disk format, or the usage flow, update
   `ARCHITECTURE.md` **in the same change** — see its "Keeping this document
-  current" section (§15) for the change-area → section map.
-- The primary lifecycle sequence diagram appears in both `ARCHITECTURE.md` §14
+  current" section (§16) for the change-area → section map.
+- The primary lifecycle sequence diagram appears in both `ARCHITECTURE.md` §15
   and `docs/usage-flow.md`; when you touch one, keep the two copies
   **byte-identical**.
 - `README.md` stays user-facing (owner quickstart + recipient steps); do not

@@ -43,6 +43,10 @@ There are **two delivery channels**:
 
 ## Quickstart (owner)
 
+Prefer a graphical wizard? Run `kawarimi gui` to do everything below — create the
+vault, arm the cloud switch (it can create the GitHub repo and set the secrets for
+you), and build the package — from a local page in your browser. The CLI flow:
+
 ```sh
 make build                      # or: go install github.com/olemoudi/kawarimi@latest
 kawarimi init                   # creates the vault; prints your mnemonic, recovery
