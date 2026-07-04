@@ -48,9 +48,12 @@ jobs:
 
       - name: Measure coverage
         # Full suite (not -short): the end-to-end lifecycle scenarios are the most
-        # meaningful coverage this project has. Runs only on pushes to main.
+        # meaningful coverage this project has. -coverpkg=./... credits code
+        # exercised across package boundaries (lifecycle tests drive deadswitch,
+        # vault, setup, ...) — without it those scenarios count for nothing.
+        # Runs only on pushes to main.
         run: |
-          go test -coverprofile=cover.out ./...
+          go test -coverpkg=./... -coverprofile=cover.out ./...
           pct=$(go tool cover -func=cover.out | awk '/^total:/ {sub(/%/,"",$3); print $3}')
           echo "coverage: ${pct}%"
           echo "PCT=$pct" >> "$GITHUB_ENV"
