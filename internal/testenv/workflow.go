@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -81,11 +82,16 @@ type wfStep struct {
 	run  string
 }
 
-// RequireWorkflowRunner skips the test unless bash + GNU date are available (the
-// production workflow always runs on ubuntu-latest, so simulating it is only
-// meaningful where the same tools exist).
+// RequireWorkflowRunner skips the test unless it can faithfully mirror the
+// production runner. The workflow always executes on ubuntu-latest, so the
+// simulation is linux-only by declaration — Windows machines with Git Bash or
+// WSL would pass a tool probe but run the scripts under a shell whose PATH and
+// path semantics differ from the runner (and from the curl shim's assumptions).
 func RequireWorkflowRunner(t testing.TB) {
 	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("workflow simulation mirrors the ubuntu runner; linux-only")
+	}
 	if err := exec.Command("bash", "-c", "date -d @0 +%s >/dev/null").Run(); err != nil {
 		t.Skip("workflow simulation needs bash + GNU date (as on the ubuntu runner)")
 	}

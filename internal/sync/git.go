@@ -309,11 +309,24 @@ func (g *GitSync) authFor() (transport.AuthMethod, error) {
 }
 
 func isLocalRemote(url string) bool {
-	return url == "" ||
+	if url == "" ||
 		strings.HasPrefix(url, "file://") ||
 		strings.HasPrefix(url, "/") ||
 		strings.HasPrefix(url, "./") ||
-		strings.HasPrefix(url, "../")
+		strings.HasPrefix(url, "../") ||
+		strings.HasPrefix(url, `\\`) { // UNC path
+		return true
+	}
+	// Windows drive paths (C:\dms.git, C:/dms.git). A single letter before ':'
+	// cannot be an SCP-style remote (user@host:path has a real host there), so
+	// this cannot misclassify git@github.com:owner/repo.git.
+	if len(url) >= 3 && url[1] == ':' && (url[2] == '\\' || url[2] == '/') {
+		c := url[0]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *GitSync) sshAuth() (*ssh.PublicKeys, error) {

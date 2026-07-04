@@ -1,0 +1,3 @@
+# Golden fixtures are compared byte-for-byte in tests; never CRLF-convert them
+# (Windows runners check out with core.autocrlf=true by default).
+*.golden.yml -text
