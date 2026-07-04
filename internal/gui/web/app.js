@@ -65,6 +65,7 @@ async function refresh() {
 }
 
 function render() {
+  updateStateDot();
   if (!state.configured) return viewWizard();
   if (!state.unlocked) return viewUnlock();
   if (nav === "wizard") return viewWizard(); // resumed switch/cloud setup for an existing vault
@@ -132,45 +133,86 @@ function viewUnlock() {
   pw.focus();
 }
 
-// ---- dashboard ----------------------------------------------------------------
+// ---- dashboard: the switch panel ------------------------------------------------
 
-function pill(on, onLabel, offLabel, warn) {
-  const cls = on ? (warn ? "pill pill-warn" : "pill pill-ok") : "pill pill-off";
-  return h("span", { class: cls }, on ? onLabel : offLabel);
+// switchStatus derives the state word + tone the whole page keys off.
+function switchStatus() {
+  if (!state.switchConfigured) return { word: "NOT ARMED", tone: "off", note: "The dead man's switch is not set up yet." };
+  if (state.daysSince < 0) return { word: "ARMED", tone: "warn", note: "No check-in recorded yet — check in once to start the clock." };
+  const d = state.daysSince, w1 = state.warning1Days, w2 = state.warning2Days, f = state.finalDays;
+  if (f > 0 && d >= f) return { word: "RELEASING", tone: "alarm", note: "Past the release threshold — the cloud may already have delivered the key. Check in NOW if you are seeing this." };
+  if (w2 > 0 && d >= w2) return { word: "OVERDUE", tone: "alarm", note: "Final release on day " + f + ". Check in now." };
+  if (w1 > 0 && d >= w1) return { word: "OVERDUE", tone: "warn", note: "Warnings are being sent. Final release on day " + f + "." };
+  return { word: "ARMED · QUIET", tone: "quiet", note: "Checked in " + d + (d === 1 ? " day" : " days") + " ago. Nothing will be sent." };
+}
+
+function updateStateDot() {
+  const dot = document.getElementById("stateDot");
+  if (!dot) return;
+  const tone = (state && state.configured && state.unlocked) ? switchStatus().tone : "off";
+  dot.className = "brand-dot" + (tone === "quiet" ? " armed" : tone === "warn" ? " warn" : tone === "alarm" ? " alarm" : "");
+}
+
+// timelineNode renders the check-in schedule: a track spanning day 0 → release,
+// zoned quiet / warning / urgent, with a marker at daysSince. Structure carries the
+// switch's real schedule.
+function timelineNode() {
+  const f = state.finalDays, w1 = state.warning1Days, w2 = state.warning2Days;
+  if (!(f > 0 && w1 > 0 && w2 > w1 && f > w2)) return null;
+  const d = Math.max(state.daysSince, 0);
+  const pct = (n) => Math.min(100, (n / f) * 100);
+  const markerPct = Math.min(99, Math.max(1, pct(d))); // keep the dot inside the track ends
+  const tone = switchStatus().tone;
+
+  const track = h("div", { class: "tl-track" },
+    h("div", { class: "tl-zones" },
+      h("div", { class: "tl-zone z-quiet", style: "width:" + pct(w1) + "%" }),
+      h("div", { class: "tl-zone z-warn", style: "width:" + (pct(w2) - pct(w1)) + "%" }),
+      h("div", { class: "tl-zone z-urgent", style: "width:" + (100 - pct(w2)) + "%" }),
+      h("div", { class: "tl-cap" })),
+    h("div", { class: "tl-marker " + tone, style: "left:" + markerPct + "%" }));
+
+  const ticks = h("div", { class: "tl-ticks" },
+    h("div", { class: "tl-tick start", style: "left:0" }, "day 0"),
+    h("div", { class: "tl-tick", style: "left:" + pct(w1) + "%" }, "warn 1 · " + w1 + "d"),
+    h("div", { class: "tl-tick", style: "left:" + pct(w2) + "%" }, "warn 2 · " + w2 + "d"),
+    h("div", { class: "tl-tick end", style: "left:100%" }, "release · " + f + "d"));
+
+  return h("div", { class: "timeline" }, track, ticks);
 }
 
 function viewDashboard() {
-  const overdue = state.checkinInterval > 0 && state.daysSince >= 0 && state.daysSince > state.checkinInterval;
-  const stats = h("div", { class: "status-grid" },
-    stat("Vault", state.vaultDir || "—"),
-    stat("Entries", String(state.entryCount)),
-    statNode("Last check-in", h("span", null,
-      state.lastCheckin || "never",
-      state.daysSince >= 0 ? h("span", { class: "muted" }, "  (" + state.daysSince + "d ago)") : null)),
-    statNode("Dead man's switch",
-      state.switchConfigured
-        ? h("span", null, pill(true, state.cloudOnly ? "cloud-only" : "armed", "", false))
-        : pill(false, "", "not configured", false))
-  );
+  updateStateDot();
+  const st = switchStatus();
 
-  const checkinBtn = h("button", { class: "btn", type: "button", onclick: doCheckin }, "Check in now");
+  const facts = h("div", { class: "facts" },
+    fact("Entries", String(state.entryCount)),
+    fact("Last check-in", state.lastCheckin || "never"),
+    state.switchConfigured ? fact("Release mode", state.cloudOnly ? "cloud-only" : "cloud + this machine") : null,
+    fact("Vault", state.vaultDir || "—", true));
 
   setView(appShell("dashboard",
     h("div", { class: "card" },
-      h("h1", null, "Dashboard"),
-      h("p", { class: "sub" }, overdue
-        ? "⚠ Your check-in is overdue — check in to keep the switch from firing."
-        : "Everything looks healthy. Check in regularly to keep the switch quiet."),
-      stats,
+      h("p", { class: "eyebrow" }, "Switch status"),
+      h("div", { class: "switch-state" },
+        h("span", { class: "switch-word " + st.tone }, st.word),
+        h("span", { class: "switch-note" }, st.note)),
+      timelineNode(),
       h("div", { class: "btn-row" },
-        checkinBtn,
+        state.switchConfigured
+          ? h("button", { class: "btn", type: "button", onclick: doCheckin }, "Check in now")
+          : h("button", { class: "btn", type: "button", onclick: startSwitchSetup }, "Set up the dead man's switch"),
         h("span", { class: "spacer" }),
         state.switchConfigured
           ? h("button", { class: "btn btn-ghost", type: "button", onclick: doVerify }, "Verify switch")
-          : h("button", { class: "btn", type: "button", onclick: startSwitchSetup }, "Set up dead man's switch")
-      )
-    )
+          : null),
+      facts)
   ));
+}
+
+function fact(k, v, wide) {
+  if (v == null) return null;
+  return h("div", { class: "fact" + (wide ? " wide" : "") }, h("div", { class: "k" }, k), h("div", { class: "v" }, v));
 }
 
 // ---- entries ------------------------------------------------------------------
@@ -193,20 +235,25 @@ async function loadEntries() {
 
 function renderEntriesList(entries) {
   const list = entries.length === 0
-    ? h("p", { class: "muted" }, "No entries yet. Add your first note or credential.")
+    ? h("div", { class: "empty-state" },
+      h("p", null, "Nothing in the vault yet. What you add here is what your recipients receive."),
+      h("div", null,
+        h("button", { class: "btn", type: "button", onclick: () => renderEntryEditor("notes", null) }, "Write a note"),
+        " ",
+        h("button", { class: "btn btn-ghost", type: "button", onclick: () => renderEntryEditor("credentials", null) }, "Add a credential")))
     : h("div", { class: "entry-list" },
       entries.map((e) => h("button", { class: "entry-row", type: "button", onclick: () => openEntry(e.id) },
         h("span", { class: "entry-cat" }, CAT_LABEL[e.category] || e.category),
         h("span", { class: "entry-title" }, e.title || e.name),
-        h("span", { class: "entry-date muted" }, (e.updatedAt || "").slice(0, 10)))));
+        h("span", { class: "entry-date" }, (e.updatedAt || "").slice(0, 10)))));
 
   setView(appShell("entries",
     h("div", { class: "card" },
       h("div", { class: "list-head" },
         h("h1", null, "Entries"),
         h("div", { class: "btn-row-inline" },
-          h("button", { class: "btn btn-sm", type: "button", onclick: () => renderEntryEditor("notes", null) }, "+ Note"),
-          h("button", { class: "btn btn-sm", type: "button", onclick: () => renderEntryEditor("credentials", null) }, "+ Credential"))),
+          h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => renderEntryEditor("notes", null) }, "+ Note"),
+          h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => renderEntryEditor("credentials", null) }, "+ Credential"))),
       list)));
 }
 
@@ -317,16 +364,17 @@ async function deleteEntry(e) {
   } catch (ex) { toast(ex.message, true); }
 }
 
-function stat(k, v) { return statNode(k, h("span", null, v)); }
-function statNode(k, vNode) {
-  return h("div", { class: "stat" }, h("div", { class: "k" }, k), h("div", { class: "v" }, vNode));
-}
-
 async function doCheckin(e) {
   const btn = e.target; btn.disabled = true;
   try {
     const r = await api("/api/checkin", { method: "POST" });
-    toast(r.pushed ? "Checked in and pushed to the cloud." : "Checked in locally.");
+    if (r.pushed) {
+      toast("Checked in — timer reset, cloud updated.");
+    } else if (r.cloudError) {
+      toast("Checked in locally, but the cloud switch was NOT updated: " + r.cloudError, true);
+    } else {
+      toast("Checked in — timer reset.");
+    }
     await refresh();
   } catch (ex) {
     toast(ex.message, true); btn.disabled = false;
@@ -337,7 +385,7 @@ async function doVerify(e) {
   const btn = e.target; btn.disabled = true;
   try {
     const r = await api("/api/switch/verify", { method: "POST" });
-    toast(r.ok ? "Switch verified — armed and current." : "Switch has warnings — see details.", !r.ok);
+    toast(r.ok ? "Switch verified — armed and current." : "Switch needs attention — run 'kawarimi switch verify' for details.", !r.ok);
   } catch (ex) {
     toast(ex.message, true);
   } finally { btn.disabled = false; }
@@ -600,6 +648,43 @@ function fieldNode(label, hint, node) {
   return h("div", null, h("label", null, label, hint ? h("span", { class: "hint" }, "  " + hint) : null), node);
 }
 
+// ---- theme ----------------------------------------------------------------------
+
+// Theme: "auto" (follow the OS), "dark", or "light". Persisted in localStorage;
+// a #theme=dark|light hash pins it for this load (used by screenshot tooling too).
+const THEMES = ["auto", "dark", "light"];
+const THEME_GLYPH = { auto: "◐", dark: "●", light: "○" };
+
+function applyTheme(mode) {
+  if (mode === "dark" || mode === "light") {
+    document.documentElement.setAttribute("data-theme", mode);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  const btn = document.getElementById("themeBtn");
+  if (btn) {
+    btn.textContent = THEME_GLYPH[mode] || THEME_GLYPH.auto;
+    btn.title = "Theme: " + mode + " (click to change)";
+  }
+}
+
+function currentTheme() {
+  const m = (location.hash.match(/theme=(dark|light)/) || [])[1];
+  if (m) return m;
+  const saved = localStorage.getItem("kawarimi-theme");
+  return THEMES.includes(saved) ? saved : "auto";
+}
+
+function initTheme() {
+  applyTheme(currentTheme());
+  document.getElementById("themeBtn").addEventListener("click", () => {
+    const next = THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length];
+    localStorage.setItem("kawarimi-theme", next);
+    if (location.hash.includes("theme=")) history.replaceState(null, "", location.pathname);
+    applyTheme(next);
+  });
+}
+
 // ---- lifecycle ----------------------------------------------------------------
 
 function startKeepalive() {
@@ -614,6 +699,8 @@ document.getElementById("quitBtn").addEventListener("click", async () => {
 });
 
 (async function main() {
+  initTheme();
+  if (location.hash.includes("entries")) nav = "entries"; // deep-link the Entries tab
   startKeepalive();
   try {
     await refresh();

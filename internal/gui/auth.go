@@ -64,7 +64,8 @@ func (s *server) withSecurity(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")
-		s.touch()
+		s.beginRequest()
+		defer s.endRequest()
 		next.ServeHTTP(w, r)
 	})
 }

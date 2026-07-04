@@ -43,6 +43,7 @@ type server struct {
 
 	mu       sync.Mutex
 	lastSeen time.Time
+	inflight int // requests currently being served; idle shutdown is deferred while > 0
 	quitOnce sync.Once
 	quit     chan struct{}
 }
@@ -104,6 +105,32 @@ func (s *server) touch() {
 	s.mu.Unlock()
 }
 
+// beginRequest/endRequest bracket every request so the idle watchdog never shuts
+// the server down while work is in flight — a package build (cross-compile) can
+// exceed the idle timeout, and browsers throttle background-tab keepalives, so
+// counting in-flight work is the only reliable guard.
+func (s *server) beginRequest() {
+	s.mu.Lock()
+	s.inflight++
+	s.lastSeen = time.Now()
+	s.mu.Unlock()
+}
+
+func (s *server) endRequest() {
+	s.mu.Lock()
+	s.inflight--
+	s.lastSeen = time.Now() // idle countdown restarts when the work finishes
+	s.mu.Unlock()
+}
+
+// idleExpired reports whether the server has been idle past the timeout with no
+// requests in flight.
+func (s *server) idleExpired() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.inflight == 0 && time.Since(s.lastSeen) > idleTimeout
+}
+
 // requestQuit triggers a graceful shutdown (idempotent).
 func (s *server) requestQuit() {
 	s.quitOnce.Do(func() { close(s.quit) })
@@ -127,10 +154,7 @@ func (s *server) watchLifecycle() {
 			s.shutdown("signal")
 			return
 		case <-ticker.C:
-			s.mu.Lock()
-			idle := time.Since(s.lastSeen)
-			s.mu.Unlock()
-			if idle > idleTimeout {
+			if s.idleExpired() {
 				s.shutdown("idle")
 				return
 			}

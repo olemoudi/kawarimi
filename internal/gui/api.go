@@ -49,6 +49,11 @@ type stateResponse struct {
 	DaysSince        int    `json:"daysSince"`
 	EntryCount       int    `json:"entryCount"`
 	Version          string `json:"version"`
+	// Escalation thresholds (0 when the switch isn't configured); the dashboard
+	// timeline renders the real warning/release schedule from these.
+	Warning1Days int `json:"warning1Days"`
+	Warning2Days int `json:"warning2Days"`
+	FinalDays    int `json:"finalDays"`
 }
 
 // buildState gathers the current state for the SPA (wizard vs unlock vs dashboard).
@@ -62,6 +67,13 @@ func (s *server) buildState() stateResponse {
 		}
 		resp.SwitchConfigured = deadswitch.IsSwitchConfigured(appDir)
 		resp.CloudOnly = deadswitch.SwitchIsCloudOnly(appDir)
+		if resp.SwitchConfigured {
+			if sc, err := deadswitch.LoadSwitchConfig(appDir); err == nil {
+				resp.Warning1Days = sc.Warning1Days
+				resp.Warning2Days = sc.Warning2Days
+				resp.FinalDays = sc.FinalDays
+			}
+		}
 	}
 
 	cfg, err := config.Load()

@@ -9,10 +9,14 @@
 </head>
 <body>
   <div class="topbar">
-    <div class="brand">kawarimi <span class="brand-sub">owner console</span></div>
+    <div class="brand">
+      <span id="stateDot" class="brand-dot" aria-hidden="true"></span>
+      kawarimi <span class="brand-sub">owner console</span>
+    </div>
     <div class="topbar-actions">
       <span id="version" class="version"></span>
-      <button id="quitBtn" class="btn btn-ghost" type="button">Quit</button>
+      <button id="themeBtn" class="btn btn-ghost btn-sm mono" type="button" title="Theme">◐</button>
+      <button id="quitBtn" class="btn btn-ghost btn-sm" type="button">Quit</button>
     </div>
   </div>
   <main id="app" class="app">

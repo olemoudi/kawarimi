@@ -119,6 +119,35 @@ func TestMutatingRequestRejectsForeignOrigin(t *testing.T) {
 	}
 }
 
+// The idle watchdog must never fire while a request (e.g. a multi-minute package
+// build) is in flight, and the idle countdown restarts when the work finishes.
+func TestIdleShutdownDeferredWhileRequestInFlight(t *testing.T) {
+	s := testServer(t)
+
+	// Stale lastSeen + no in-flight work → idle.
+	s.mu.Lock()
+	s.lastSeen = time.Now().Add(-2 * idleTimeout)
+	s.mu.Unlock()
+	if !s.idleExpired() {
+		t.Fatal("expected idle expiry with a stale lastSeen and no in-flight requests")
+	}
+
+	// An in-flight request suppresses idle shutdown no matter how stale lastSeen is.
+	s.beginRequest()
+	s.mu.Lock()
+	s.lastSeen = time.Now().Add(-2 * idleTimeout)
+	s.mu.Unlock()
+	if s.idleExpired() {
+		t.Fatal("idle expiry fired while a request was in flight — a long build would be killed")
+	}
+
+	// Finishing the request restarts the countdown from now.
+	s.endRequest()
+	if s.idleExpired() {
+		t.Fatal("idle expired immediately after a request finished; countdown should restart")
+	}
+}
+
 func TestQuitSignalsShutdown(t *testing.T) {
 	s := testServer(t)
 	h := s.routes()
