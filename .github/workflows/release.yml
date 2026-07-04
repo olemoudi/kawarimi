@@ -26,3 +26,8 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Ed25519 seed (base64 of the 32-byte seed) that tools/ksign uses to sign
+          # checksums.txt. Must be set as a repository Actions secret before tagging.
+          # GitHub does not expose secrets as env vars automatically — without this
+          # line ksign exits 1 and the release fails.
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
