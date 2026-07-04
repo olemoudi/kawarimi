@@ -108,6 +108,29 @@ func TestInitVaultRefusesSecondInit(t *testing.T) {
 	}
 }
 
+// A lost or corrupt config must never let a re-init overwrite an existing vault
+// header (which holds the only copy of the age identity).
+func TestInitVaultRefusesOverExistingHeader(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	vaultDir := filepath.Join(home, "vault")
+	fast := crypto.TestParams()
+	opts := InitOptions{VaultDir: vaultDir, Password: "first password", MnemonicKDFParams: &fast, OwnerKDFParams: &fast}
+	if _, err := InitVault(opts); err != nil {
+		t.Fatalf("first init: %v", err)
+	}
+
+	// Simulate a lost/corrupt config while the vault header survives.
+	if err := os.Remove(filepath.Join(home, config.AppDir, config.ConfigFile)); err != nil {
+		t.Fatalf("remove config: %v", err)
+	}
+
+	opts.Password = "second password"
+	if _, err := InitVault(opts); err == nil {
+		t.Fatal("init overwrote an existing vault header — data would be orphaned")
+	}
+}
+
 func TestStoreSwitchPayloadForMode(t *testing.T) {
 	_, _, appDir := testInit(t)
 

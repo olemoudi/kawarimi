@@ -96,17 +96,34 @@ var switchSetupCmd = &cobra.Command{
 
 		fmt.Println()
 		fmt.Println("-- Escalation Thresholds --")
-		fmt.Printf("Warning 1 (default: %d days): ", switchCfg.Warning1Days)
-		if v := readLine(reader); v != "" {
-			switchCfg.Warning1Days, _ = strconv.Atoi(v)
+		readDays := func(label string, cur int) (int, error) {
+			fmt.Printf("%s (default: %d days): ", label, cur)
+			v := readLine(reader)
+			if v == "" {
+				return cur, nil
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return 0, fmt.Errorf("invalid number %q for %s", v, label)
+			}
+			return n, nil
 		}
-		fmt.Printf("Warning 2 (default: %d days): ", switchCfg.Warning2Days)
-		if v := readLine(reader); v != "" {
-			switchCfg.Warning2Days, _ = strconv.Atoi(v)
+		if switchCfg.Warning1Days, err = readDays("Warning 1", switchCfg.Warning1Days); err != nil {
+			return err
 		}
-		fmt.Printf("Final release (default: %d days): ", switchCfg.FinalDays)
-		if v := readLine(reader); v != "" {
-			switchCfg.FinalDays, _ = strconv.Atoi(v)
+		if switchCfg.Warning2Days, err = readDays("Warning 2", switchCfg.Warning2Days); err != nil {
+			return err
+		}
+		if switchCfg.FinalDays, err = readDays("Final release", switchCfg.FinalDays); err != nil {
+			return err
+		}
+		// Guard against an accidental immediate release: thresholds must strictly
+		// increase and be positive, or the switch could fire on the next daily run.
+		if switchCfg.Warning1Days < 1 ||
+			switchCfg.Warning1Days >= switchCfg.Warning2Days ||
+			switchCfg.Warning2Days >= switchCfg.FinalDays {
+			return fmt.Errorf("thresholds must increase and be positive: warning 1 (%d) < warning 2 (%d) < final release (%d)",
+				switchCfg.Warning1Days, switchCfg.Warning2Days, switchCfg.FinalDays)
 		}
 
 		// Telegram configuration
@@ -307,24 +324,42 @@ var switchTestCmd = &cobra.Command{
 
 var switchDisableCmd = &cobra.Command{
 	Use:   "disable",
-	Short: "Disable the dead man's switch",
+	Short: "Disable the dead man's switch (local and cloud)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appDir, err := config.AppDirPath()
 		if err != nil {
 			return err
 		}
 
-		// Remove switch files
-		files := []string{"switch-identity.key", "switch-payload.age", "switch-config.age"}
-		for _, f := range files {
+		// Neutralize the CLOUD switch first — it is the real post-mortem trigger, and
+		// it keeps firing on its schedule regardless of the local files. If we cannot
+		// reach it, refuse to claim the switch is disabled.
+		cfg, cfgErr := config.Load()
+		if cfgErr == nil && cfg.SyncTargets.DMSRemote != "" {
+			if err := setup.DisableCloudSwitch(cfg); err != nil {
+				fmt.Fprintf(os.Stderr, "Could not disable the cloud dead man's switch: %v\n", err)
+				fmt.Fprintln(os.Stderr, "The CLOUD switch is STILL ARMED and may fire while you are alive.")
+				fmt.Fprintf(os.Stderr, "Fix connectivity and re-run, or delete the workflow/repo yourself:\n  %s\n", cfg.SyncTargets.DMSRemote)
+				return fmt.Errorf("cloud switch not disabled")
+			}
+			cfg.SyncTargets.DMSRemote = ""
+			if err := config.Save(cfg); err != nil {
+				return fmt.Errorf("saving config: %w", err)
+			}
+		}
+
+		// Remove local switch files (incl. the overdue ratchet anchor).
+		for _, f := range []string{"switch-identity.key", "switch-payload.age", "switch-config.age", "first-overdue-at"} {
 			os.Remove(filepath.Join(appDir, f))
 		}
 
-		// Try to disable systemd timer
+		// Try to disable the local systemd timer.
 		exec.Command("systemctl", "--user", "disable", "--now", "kawarimi-switch.timer").Run()
 
-		fmt.Println("Dead man's switch disabled.")
-		fmt.Println("The GitHub Actions workflow file remains in the vault — remove it manually if needed.")
+		fmt.Println("Dead man's switch disabled (local files removed; cloud workflow neutralized).")
+		if cfgErr == nil && cfg.SyncTargets.GitRemote == "" {
+			fmt.Println("You can now delete the DMS GitHub repo if you no longer need it.")
+		}
 
 		return nil
 	},
@@ -492,16 +527,26 @@ Requires your 8 mnemonic words (paper backup) to re-seal; they are not stored.`,
 		}
 
 		// Update the stored switch payload, preserving the machine's release mode:
-		// cloud-only machines keep holding no key.
+		// cloud-only machines keep holding no key. Storing the payload rotates the
+		// switch identity, so we must load the switch config BEFORE (while the old
+		// identity can still decrypt it) and re-save it AFTER (re-encrypted to the
+		// new identity) — otherwise switch-config.age is orphaned and verify/evaluate
+		// silently break.
 		cloudOnly := false
 		if deadswitch.IsSwitchConfigured(appDir) {
-			if deadswitch.SwitchIsCloudOnly(appDir) {
-				cloudOnly = true
+			switchCfg, cfgErr := deadswitch.LoadSwitchConfig(appDir)
+			cloudOnly = deadswitch.SwitchIsCloudOnly(appDir)
+			if cloudOnly {
 				if err := deadswitch.StoreSwitchCloudOnly(appDir); err != nil {
 					return fmt.Errorf("updating stored switch payload: %w", err)
 				}
 			} else if err := deadswitch.StoreSwitchDMSKey(appDir, dmsKeyB64); err != nil {
 				return fmt.Errorf("updating stored switch payload: %w", err)
+			}
+			if cfgErr == nil {
+				if err := deadswitch.SaveSwitchConfig(appDir, switchCfg); err != nil {
+					return fmt.Errorf("re-saving switch config after rekey: %w", err)
+				}
 			}
 		}
 
@@ -701,7 +746,13 @@ var switchEvaluateCmd = &cobra.Command{
 			return err
 		}
 
-		return deadswitch.Evaluate(targets, switchCfg, appDir)
+		if err := deadswitch.Evaluate(targets, switchCfg, appDir); err != nil {
+			return err
+		}
+		// Automatic health tripwire: alert the owner if the cloud switch is stale or
+		// its workflow drifted, so the manual `switch verify` isn't the only guard.
+		deadswitch.AlertIfRemoteStale(targets, switchCfg, appDir)
+		return nil
 	},
 }
 

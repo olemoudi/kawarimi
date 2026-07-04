@@ -5,10 +5,12 @@
 package setup
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/olemoudi/kawarimi/internal/atomicfile"
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/vault"
@@ -56,6 +58,11 @@ func InitVault(opts InitOptions) (*InitSecrets, error) {
 	// friendlier check first; this protects non-CLI callers).
 	if cfg, err := config.Load(); err == nil {
 		return nil, fmt.Errorf("vault already configured at %s", cfg.VaultDir)
+	}
+	// Even if the config is missing or corrupt, never overwrite an existing header —
+	// that would discard the only copy of the age identity and orphan the vault.
+	if _, err := os.Stat(filepath.Join(opts.VaultDir, vault.HeaderFile)); err == nil {
+		return nil, fmt.Errorf("a vault already exists at %s (found %s) — refusing to overwrite it", opts.VaultDir, vault.HeaderFile)
 	}
 
 	deviceID := opts.DeviceID
@@ -157,15 +164,29 @@ func SealAndInstallV4(vaultDir, appDir string, entropy []byte, recipientPassphra
 		return "", fmt.Errorf("sealing mnemonic: %w", err)
 	}
 
+	// Self-check: prove the sealed payload round-trips with the exact DMS key and
+	// passphrase a recipient will use, BEFORE trusting it. This catches any
+	// corruption or seal/unseal asymmetry now — while the owner can fix it — rather
+	// than post-mortem, when only the recipient would discover it and could not.
+	check, err := crypto.UnsealMnemonicV4(sealedPayload, dmsKey, recipientPassphrase)
+	if err != nil {
+		return "", fmt.Errorf("sealed payload failed its self-check (unseal): %w", err)
+	}
+	roundTripped := bytes.Equal(check, entropy)
+	crypto.ZeroBytes(check)
+	if !roundTripped {
+		return "", fmt.Errorf("sealed payload failed its self-check: unsealed data did not match")
+	}
+
 	// The sealed payload lives in the vault dir (publicly distributed in the package).
 	sealedPath := filepath.Join(vaultDir, vault.SealedPayloadFile)
-	if err := os.WriteFile(sealedPath, sealedPayload, 0600); err != nil {
+	if err := atomicfile.WriteFile(sealedPath, sealedPayload, 0600); err != nil {
 		return "", fmt.Errorf("saving sealed payload: %w", err)
 	}
 
 	// The DMS key is kept locally for `switch seed` to publish as the GitHub secret.
 	dmsKeyPath := filepath.Join(appDir, "dms-key")
-	if err := os.WriteFile(dmsKeyPath, []byte(crypto.EncodeDMSKey(dmsKey)), 0600); err != nil {
+	if err := atomicfile.WriteFile(dmsKeyPath, []byte(crypto.EncodeDMSKey(dmsKey)), 0600); err != nil {
 		return "", fmt.Errorf("saving DMS key: %w", err)
 	}
 

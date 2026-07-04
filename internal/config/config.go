@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/olemoudi/kawarimi/internal/atomicfile"
 )
 
 const (
@@ -116,5 +118,5 @@ func Save(cfg *Config) error {
 	}
 
 	path := filepath.Join(appDir, ConfigFile)
-	return os.WriteFile(path, data, 0600)
+	return atomicfile.WriteFile(path, data, 0600)
 }

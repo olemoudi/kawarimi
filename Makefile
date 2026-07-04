@@ -7,8 +7,11 @@ PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
 .PHONY: build test test-all vet fmt fmt-check cross install clean
 
+# Own code only (exclude the vendored tree from gofmt).
+GOFILES := $(shell git ls-files '*.go' | grep -v '^vendor/')
+
 build:
-	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) .
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 test:
 	go test -short ./...
@@ -20,10 +23,10 @@ vet:
 	go vet ./...
 
 fmt:
-	gofmt -w .
+	gofmt -w $(GOFILES)
 
 fmt-check:
-	@test -z "$$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
+	@test -z "$$(gofmt -l $(GOFILES))" || { echo "gofmt needed:"; gofmt -l $(GOFILES); exit 1; }
 
 # Cross-compile the recipient binaries into dist/.
 cross:
@@ -36,7 +39,7 @@ cross:
 	done
 
 install:
-	go install -trimpath -ldflags "$(LDFLAGS)" .
+	CGO_ENABLED=0 go install -trimpath -ldflags "$(LDFLAGS)" .
 
 clean:
 	rm -f $(BINARY)

@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 
+	"github.com/olemoudi/kawarimi/internal/atomicfile"
 	"github.com/olemoudi/kawarimi/internal/crypto"
 )
 
@@ -66,15 +70,35 @@ func (m *Manifest) FindEntriesByCategory(cat Category) []*Entry {
 	return result
 }
 
-// NextSeq returns the next sequence number for a given category.
+// NextSeq returns the next sequence number for a category — one past the HIGHEST
+// existing sequence, not a count. Using a count would reuse a number after a delete
+// (e.g. delete 001 of {001,002} then add → 002), overwriting a surviving entry's
+// ciphertext and silently losing data.
 func (m *Manifest) NextSeq(cat Category) int {
 	max := 0
 	for _, e := range m.Entries {
-		if e.Category == cat {
-			max++
+		if e.Category != cat {
+			continue
+		}
+		if seq := seqFromFilename(e.Filename); seq > max {
+			max = seq
 		}
 	}
 	return max + 1
+}
+
+// seqFromFilename extracts the NNN sequence prefix from "category/NNN-slug.ext.age".
+func seqFromFilename(filename string) int {
+	base := filepath.Base(filename)
+	i := strings.IndexByte(base, '-')
+	if i <= 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(base[:i])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // Marshal serializes the manifest to JSON.
@@ -119,7 +143,7 @@ func SaveManifestV2(path string, m *Manifest, ageRecipient string) error {
 	if err != nil {
 		return fmt.Errorf("encrypting manifest: %w", err)
 	}
-	return os.WriteFile(path, ciphertext, 0600)
+	return atomicfile.WriteFile(path, ciphertext, 0600)
 }
 
 // LoadManifestV2 reads and decrypts the manifest using an age X25519 identity.

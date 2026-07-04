@@ -111,11 +111,13 @@ func TestGenerateGitHubDMSWorkflowInvariants(t *testing.T) {
 		"Alert owner of DMS misconfiguration",
 		"permissions:", // least privilege
 		"actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
-		"dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde",
+		"curl --silent --show-error --ssl-reqd", // email sent via curl, no third-party action
+		"smtp://$SMTP_SERVER:587",               // templated scheme + default port (was hardcoded 587)
+		"--mail-rcpt",
 		"days_since >= 14",       // Warning1Days rendered
 		"days_since >= 30",       // FinalDays rendered (release threshold)
 		"${{ secrets.DMS_KEY }}", // GitHub expression passed through intact
-		"ESPAÑOL",                // release email is bilingual
+		"ESPANOL",                // release email is bilingual
 		"ENGLISH",
 		"INDEX.md", // shared canonical step marker across all recipient surfaces
 	}
@@ -131,11 +133,20 @@ func TestGenerateGitHubDMSWorkflowInvariants(t *testing.T) {
 		"days_since=999", // old fail-open sentinel that emailed recipients immediately
 		"date -j",        // macOS fallback removed (runner is always ubuntu)
 		"age -d",         // recipients must never be told to use the age CLI (fails on V2/V4)
+		"dawidd6",        // no third-party mail action (longevity)
+		"action-send-mail",
+		"server_port: 587", // the port is now templated, not hardcoded
 	}
 	for _, s := range mustNotContain {
 		if strings.Contains(yaml, s) {
 			t.Errorf("workflow YAML should not contain %q", s)
 		}
+	}
+
+	// The ONLY third-party dependency the post-mortem release may have is
+	// GitHub-owned actions/checkout — nothing else that could vanish over the years.
+	if n := strings.Count(yaml, "uses:"); n != 1 {
+		t.Errorf("expected exactly one `uses:` (actions/checkout), found %d", n)
 	}
 
 	// Default config has no Telegram token -> no Telegram step.

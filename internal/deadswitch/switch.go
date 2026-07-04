@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/olemoudi/kawarimi/internal/atomicfile"
 	"github.com/olemoudi/kawarimi/internal/copytext"
 	"github.com/olemoudi/kawarimi/internal/vault"
 )
@@ -135,7 +136,7 @@ func Evaluate(targets CheckinTargets, switchCfg *SwitchConfig, appDir string) er
 		if err == nil {
 			alive, err := CheckForAlive(switchCfg.TelegramBotToken, switchCfg.TelegramChatID, lastCheckin, appDir)
 			if err == nil && alive {
-				autoCheckin(targets, "Telegram")
+				autoCheckin(targets, switchCfg, "Telegram")
 			}
 		}
 	}
@@ -146,7 +147,7 @@ func Evaluate(targets CheckinTargets, switchCfg *SwitchConfig, appDir string) er
 		if err == nil {
 			alive, err := CheckIMAPForAlive(switchCfg, lastCheckin)
 			if err == nil && alive {
-				autoCheckin(targets, "IMAP")
+				autoCheckin(targets, switchCfg, "IMAP")
 			}
 		}
 	}
@@ -157,33 +158,128 @@ func Evaluate(targets CheckinTargets, switchCfg *SwitchConfig, appDir string) er
 	}
 
 	stage := EvaluateStage(daysSince, switchCfg)
+	overdueAnchor := filepath.Join(appDir, "first-overdue-at")
 
 	switch stage {
 	case StageNormal:
+		// Healthy again (checked in, or a transient clock skew corrected itself):
+		// reset the overdue ratchet.
+		os.Remove(overdueAnchor)
 		return nil
 
 	case StageWarning1:
+		recordFirstOverdue(overdueAnchor)
 		return sendPing(switchCfg, daysSince, false)
 
 	case StageWarning2:
+		recordFirstOverdue(overdueAnchor)
 		return sendPing(switchCfg, daysSince, true)
 
 	case StageFinal:
+		recordFirstOverdue(overdueAnchor)
+		// Clock-jump guard: only release locally once the switch has been overdue for
+		// enough REAL elapsed time (measured from the anchor set when it first went
+		// overdue), so a forward clock jump cannot skip the warning ladder and
+		// disclose the key on a single run. The cloud DMS (correct NTP time on the
+		// runner) remains the authoritative post-mortem trigger.
+		if !overdueLongEnough(overdueAnchor, switchCfg) {
+			fmt.Fprintln(os.Stderr, "dead man's switch reached the final stage, but the overdue period is not yet confirmed by real elapsed time (possible clock jump) — alerting the owner instead of releasing")
+			return sendPing(switchCfg, daysSince, true)
+		}
 		if err := triggerFinalRelease(switchCfg, appDir); err != nil {
 			return err
 		}
-		return os.WriteFile(triggeredPath, []byte(time.Now().UTC().Format(time.RFC3339)), 0600)
+		return atomicfile.WriteFile(triggeredPath, []byte(time.Now().UTC().Format(time.RFC3339)), 0600)
 	}
 
 	return nil
 }
 
-// autoCheckin records an auto check-in triggered by an ALIVE reply. It is
-// best-effort: a cloud push failure is logged to stderr (the systemd journal)
-// but does not abort evaluation.
-func autoCheckin(targets CheckinTargets, source string) {
-	if _, err := RecordCheckin(targets, time.Now()); err != nil {
-		fmt.Fprintf(os.Stderr, "auto check-in from %s: cloud DMS push failed: %v\n", source, err)
+// recordFirstOverdue stamps the first wall-clock time the switch was observed overdue
+// (if not already stamped), as the anchor for the clock-jump ratchet.
+func recordFirstOverdue(path string) {
+	if _, err := os.Stat(path); err == nil {
+		return
+	}
+	_ = atomicfile.WriteFile(path, []byte(time.Now().UTC().Format(time.RFC3339)), 0600)
+}
+
+// overdueLongEnough reports whether enough real time has elapsed since the switch
+// first went overdue to justify a local final release — the (FinalDays-Warning1Days)
+// span the warning ladder normally occupies, and at least one full day.
+func overdueLongEnough(path string, cfg *SwitchConfig) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	first, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+	if err != nil {
+		return false
+	}
+	minReal := time.Duration(cfg.FinalDays-cfg.Warning1Days) * 24 * time.Hour
+	if minReal < 24*time.Hour {
+		minReal = 24 * time.Hour
+	}
+	return time.Since(first) >= minReal
+}
+
+// autoCheckin records an auto check-in triggered by an ALIVE reply. If the local
+// heartbeat refreshed but the cloud push failed, it alerts the owner: otherwise the
+// local switch goes quiet (owner looks fine here) while the cloud heartbeat stays
+// stale and could fire while the owner is alive — a dangerous split brain.
+func autoCheckin(targets CheckinTargets, cfg *SwitchConfig, source string) {
+	pushed, err := RecordCheckin(targets, time.Now())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "auto check-in from %s: %v\n", source, err)
+	}
+	if !pushed && targets.DMSRemote != "" {
+		_ = SendEmail(cfg, []string{cfg.UserEmail},
+			"Kawarimi: check-in did not reach the cloud",
+			fmt.Sprintf("An automatic check-in (via %s) updated this machine but could NOT reach the cloud dead man's switch.\n\nIf the cloud heartbeat stays stale the switch may fire while you are alive. Run 'kawarimi checkin' and 'kawarimi switch verify' from a connected machine.", source))
+		if cfg.TelegramBotToken != "" && cfg.TelegramChatID != "" {
+			_ = SendTelegramMessage(cfg.TelegramBotToken, cfg.TelegramChatID,
+				"Kawarimi: an /alive check-in did not reach the cloud switch. Please run 'kawarimi checkin' from a connected machine.")
+		}
+	}
+}
+
+// AlertIfRemoteStale runs a health check and, if the cloud switch looks unhealthy
+// (stale remote heartbeat, or a missing/outdated workflow), emails the owner at most
+// once a day. Running it from the systemd `evaluate` timer turns the otherwise
+// manual `switch verify` into an automatic tripwire, so a silently-broken cloud
+// switch is caught. Best-effort: it never alerts when the remote simply can't be
+// reached (this machine may be offline), to avoid false alarms.
+func AlertIfRemoteStale(targets CheckinTargets, cfg *SwitchConfig, appDir string) {
+	if targets.DMSRemote == "" {
+		return
+	}
+	report, err := Verify(targets, cfg, appDir)
+	if err != nil || report.RemoteCheckinErr != nil {
+		return // couldn't complete the check / reach the remote — don't false-alarm
+	}
+	markerPath := filepath.Join(appDir, "remote-alert-at")
+	if report.WorkflowPresent && report.WorkflowUpToDate && !report.RemoteStale {
+		os.Remove(markerPath) // healthy again
+		return
+	}
+	// Dedup: at most one alert per ~day.
+	if data, rerr := os.ReadFile(markerPath); rerr == nil {
+		if last, perr := time.Parse(time.RFC3339, strings.TrimSpace(string(data))); perr == nil && time.Since(last) < 20*time.Hour {
+			return
+		}
+	}
+	body := "Your Kawarimi cloud dead man's switch looks unhealthy:\n"
+	if !report.WorkflowPresent {
+		body += "  - the release workflow is missing from the DMS repo\n"
+	} else if !report.WorkflowUpToDate {
+		body += "  - the release workflow is out of date\n"
+	}
+	if report.RemoteStale {
+		body += "  - the cloud heartbeat is stale (your check-ins are not reaching it)\n"
+	}
+	body += "\nRun 'kawarimi switch verify' and 'kawarimi switch seed' from a connected machine."
+	if err := SendEmail(cfg, []string{cfg.UserEmail}, "Kawarimi: cloud dead man's switch needs attention", body); err == nil {
+		_ = atomicfile.WriteFile(markerPath, []byte(time.Now().UTC().Format(time.RFC3339)), 0600)
 	}
 }
 
@@ -487,20 +583,20 @@ func StoreSwitchPayload(appDir string, passphrase string) error {
 		return fmt.Errorf("generating key pair: %w", err)
 	}
 
-	// Store identity (private key)
-	identityPath := filepath.Join(appDir, "switch-identity.key")
-	if err := os.WriteFile(identityPath, []byte(privKey+"\n"), 0600); err != nil {
-		return fmt.Errorf("writing switch identity: %w", err)
-	}
-
-	// Encrypt and store payload
+	// Encrypt the payload first, so we never replace the identity with a new one
+	// unless we also have its matching payload ready to write.
 	encrypted, err := encryptWithX25519([]byte(passphrase), pubKey)
 	if err != nil {
 		return fmt.Errorf("encrypting switch payload: %w", err)
 	}
 
+	identityPath := filepath.Join(appDir, "switch-identity.key")
+	if err := atomicfile.WriteFile(identityPath, []byte(privKey+"\n"), 0600); err != nil {
+		return fmt.Errorf("writing switch identity: %w", err)
+	}
+
 	payloadPath := filepath.Join(appDir, "switch-payload.age")
-	if err := os.WriteFile(payloadPath, encrypted, 0600); err != nil {
+	if err := atomicfile.WriteFile(payloadPath, encrypted, 0600); err != nil {
 		return fmt.Errorf("writing switch payload: %w", err)
 	}
 
@@ -547,7 +643,7 @@ func SaveSwitchConfig(appDir string, cfg *SwitchConfig) error {
 		return fmt.Errorf("encrypting switch config: %w", err)
 	}
 
-	return os.WriteFile(SwitchConfigPath(appDir), encrypted, 0600)
+	return atomicfile.WriteFile(SwitchConfigPath(appDir), encrypted, 0600)
 }
 
 // LoadSwitchConfig decrypts and loads the switch configuration.

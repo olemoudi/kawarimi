@@ -12,6 +12,7 @@ type messages struct {
 	success    string // one %s for the output path
 	pressEnter string
 	noVault    string
+	lowMemory  string // one %d for available MiB
 }
 
 func messagesFor(lang string) messages {
@@ -31,6 +32,9 @@ func messagesFor(lang string) messages {
 			pressEnter: "\nPress Enter to close this window...",
 			noVault: "Could not find a vault here. Put this program in the same folder as the vault\n" +
 				"package (the .zip you downloaded), or extract the zip first, then run it again.",
+			lowMemory: "\nNote: this computer reports only about %d MB of free memory. Opening the vault\n" +
+				"needs roughly 1.5 GB free and may fail here — if it does, try a computer with\n" +
+				"at least 2 GB of RAM.\n",
 		}
 	}
 	return messages{
@@ -48,5 +52,8 @@ func messagesFor(lang string) messages {
 		pressEnter: "\nPulsa Intro para cerrar esta ventana...",
 		noVault: "No se encontró ninguna caja fuerte aquí. Pon este programa en la misma carpeta que\n" +
 			"el paquete (el .zip que descargaste), o descomprime el zip primero, y vuelve a ejecutarlo.",
+		lowMemory: "\nNota: este equipo indica solo unos %d MB de memoria libre. Abrir la caja fuerte\n" +
+			"necesita aproximadamente 1,5 GB libres y podría fallar aquí — si falla, prueba en un\n" +
+			"equipo con al menos 2 GB de RAM.\n",
 	}
 }

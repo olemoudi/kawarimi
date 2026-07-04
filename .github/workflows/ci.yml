@@ -19,7 +19,9 @@ jobs:
           go-version: '1.25'
 
       - name: gofmt
-        run: test -z "$(gofmt -l .)" || { echo 'These files need gofmt:'; gofmt -l .; exit 1; }
+        run: |
+          files=$(git ls-files '*.go' | grep -v '^vendor/')
+          test -z "$(gofmt -l $files)" || { echo 'These files need gofmt:'; gofmt -l $files; exit 1; }
 
       - name: go vet
         run: go vet ./...

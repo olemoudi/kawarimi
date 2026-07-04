@@ -163,6 +163,24 @@ last_checkin         # RFC3339 heartbeat timestamp (excluded from packages)
 README.md  DECRYPT_INSTRUCTIONS.md   # recipient docs (regenerated at package time)
 ```
 
+### Durability & failure modes
+
+The header holds *all* key material, so a torn write would brick the vault
+permanently. Every durable write therefore goes through
+[`internal/atomicfile`](internal/atomicfile/atomicfile.go) — write to a temp file,
+`fsync`, atomic `rename` — so a crash, power loss, or full disk leaves either the
+previous or the new complete file, never a truncated one. `SaveHeader` additionally
+keeps `vault_header.json.bak`, and `LoadHeader` self-heals from it. If the manifest
+index is ever lost, `vault.RebuildManifest` (`kawarimi repair`) re-indexes the
+encrypted entry files from the identity. Migration writes the new header *first* and
+keeps the v1 originals until the migrated vault verifies. The recipient path is
+self-checked at seal time (the payload is unsealed and compared before it is
+trusted) and on demand via `kawarimi verify --recipient`. The local switch will not
+release on a single implausibly-overdue observation (a clock-jump ratchet requires
+real elapsed time), and `switch disable` neutralizes the cloud workflow, not just the
+local files. See [`docs/reliability-review.md`](docs/reliability-review.md) for the
+full failure-mode analysis.
+
 ---
 
 ## 6. Cryptography reference
@@ -375,7 +393,8 @@ mode the local `dms-key` is deleted once the GitHub secret is set.
   the mnemonic/recovery/recipient-passphrase are shown once and never logged; unlock
   still goes through the device-key owner slot. No new on-disk formats are introduced.
 - **Auto-shutdown** — a keepalive ping keeps the server alive while the tab is open;
-  it exits on idle, on `Quit`, or on Ctrl-C.
+  it exits on idle (deferred while any request is in flight, so a long package build
+  is never killed mid-way), on `Quit`, or on Ctrl-C.
 
 The existing Bubble Tea `kawarimi tui` is unchanged and complementary.
 
@@ -414,6 +433,14 @@ see [`internal/vault/migrate.go`](internal/vault/migrate.go).
   `CGO_ENABLED=0`, linux/darwin/windows × amd64/arm64, binaries named
   `kawarimi-{{.Os}}-{{.Arch}}` so `dist/` feeds straight into
   `kawarimi package build --binaries dist/`; draft release, checksums.
+- **Longevity** (must build & run for years, unattended): dependencies are
+  **vendored** (`vendor/`, committed) so `go build` works fully offline even if
+  module proxies change; every build path is `CGO_ENABLED=0` (incl. `make
+  build`/`install`); and the generated cloud DMS workflow sends email with **`curl`**
+  rather than a third-party Action, so the only remaining `uses:` is GitHub-owned
+  `actions/checkout` — nothing that can be deleted or deprecated out from under the
+  switch. The recipient binaries are self-contained static builds that need no
+  network at open time.
 
 ---
 
@@ -473,7 +500,7 @@ sequenceDiagram
         CLI->>CLI: Write local last_checkin
         CLI->>DMS: Push heartbeat over SSH
     end
-    Note over DMS: Daily cron: quiet while current;<br/>Warning1 / Warning2 email the owner only
+    Note over DMS: Daily cron stays quiet while current, then emails Warning1 and Warning2 to the owner only
 
     Note over Owner,Recipient: Phase 3 — Overdue → final release
     DMS->>DMS: Daily cron reads last_checkin

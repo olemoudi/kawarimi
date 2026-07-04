@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,8 +44,9 @@ var checkinCmd = &cobra.Command{
 		}
 
 		pushed, checkinErr := deadswitch.RecordCheckin(targets, now)
-		if checkinErr != nil && cfg.SyncTargets.DMSRemote == "" {
-			// No cloud DMS configured, so the only failure path is the local write.
+		// A local-write failure is always fatal (a phantom check-in is dangerous);
+		// with no cloud DMS configured, the local write is the only failure path.
+		if checkinErr != nil && (cfg.SyncTargets.DMSRemote == "" || errors.Is(checkinErr, deadswitch.ErrLocalCheckin)) {
 			return checkinErr
 		}
 
@@ -63,6 +65,8 @@ var checkinCmd = &cobra.Command{
 				if checkinErr != nil {
 					fmt.Fprintf(os.Stderr, "Cause: %v\n", checkinErr)
 				}
+				// Exit non-zero so automation (cron/scripts) notices the cloud gap.
+				return fmt.Errorf("cloud check-in did not reach the dead man's switch")
 			}
 		}
 

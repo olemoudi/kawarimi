@@ -15,10 +15,19 @@ import (
 
 const telegramAPIBase = "https://api.telegram.org/bot"
 
-// telegramAPIBaseOverride allows tests to redirect API calls to a test server.
+// telegramHTTP bounds every Telegram request; the default http client has no timeout,
+// which could hang an unattended evaluate run on a stalled endpoint.
+var telegramHTTP = &http.Client{Timeout: 15 * time.Second}
+
+// telegramAPIBaseOverride allows in-package tests to redirect API calls to a test
+// server. The KAWARIMI_TELEGRAM_API environment variable does the same across
+// packages (used by the internal/testenv harness) and takes precedence.
 var telegramAPIBaseOverride string
 
 func telegramAPI() string {
+	if v := os.Getenv("KAWARIMI_TELEGRAM_API"); v != "" {
+		return v
+	}
 	if telegramAPIBaseOverride != "" {
 		return telegramAPIBaseOverride
 	}
@@ -59,7 +68,7 @@ type telegramChat struct {
 func SendTelegramMessage(token, chatID, text string) error {
 	apiURL := telegramAPI() + token + "/sendMessage"
 
-	resp, err := http.PostForm(apiURL, url.Values{
+	resp, err := telegramHTTP.PostForm(apiURL, url.Values{
 		"chat_id":    {chatID},
 		"text":       {text},
 		"parse_mode": {"Markdown"},
@@ -93,7 +102,7 @@ func CheckForAlive(token, chatID string, since time.Time, appDir string) (bool, 
 		vals.Set("offset", strconv.Itoa(offset))
 	}
 
-	resp, err := http.PostForm(apiURL, vals)
+	resp, err := telegramHTTP.PostForm(apiURL, vals)
 	if err != nil {
 		return false, fmt.Errorf("telegram getUpdates: %w", err)
 	}
@@ -168,7 +177,7 @@ func ResolveChatID(token string) (string, error) {
 	// Get recent updates to find the chat ID
 	apiURL := telegramAPI() + token + "/getUpdates"
 
-	resp, err := http.PostForm(apiURL, url.Values{
+	resp, err := telegramHTTP.PostForm(apiURL, url.Values{
 		"timeout": {"0"},
 		"limit":   {"10"},
 	})

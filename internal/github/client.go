@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -25,10 +26,16 @@ type Client struct {
 }
 
 // NewClient returns a client authenticated with the given personal access token.
+// The KAWARIMI_GITHUB_API environment variable overrides the API base URL (used by
+// the internal/testenv harness to point at a mock server; mirrors GITHUB_API_URL).
 func NewClient(token string) *Client {
+	base := defaultBaseURL
+	if v := os.Getenv("KAWARIMI_GITHUB_API"); v != "" {
+		base = v
+	}
 	return &Client{
 		token:   strings.TrimSpace(token),
-		baseURL: defaultBaseURL,
+		baseURL: base,
 		http:    &http.Client{Timeout: 30 * time.Second},
 	}
 }

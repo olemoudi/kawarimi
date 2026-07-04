@@ -77,6 +77,13 @@ SI EL SISTEMA TE AVISA DE QUE EL PROGRAMA "NO ES SEGURO"
   Es normal: el programa no está firmado, pero es el que te dejó el titular.
    - Windows (SmartScreen): pulsa "Más información" y luego "Ejecutar de todas formas".
    - Mac (Gatekeeper): haz clic derecho en el programa, elige "Abrir", y confirma.
+     Si Mac no te deja, abre Ajustes del Sistema > Privacidad y seguridad,
+     baja hasta el aviso del programa y pulsa "Abrir de todas formas".
+
+SI EL PROGRAMA SE CIERRA SOLO O NO LLEGA A ABRIR
+
+  Necesita un ordenador con al menos 2 GB de memoria (RAM). Si no funciona,
+  prueba en un ordenador más nuevo.
 
 ====================================================================
 ENGLISH
@@ -109,6 +116,13 @@ IF YOUR SYSTEM WARNS THE PROGRAM IS "NOT SAFE"
   This is expected: the program is unsigned, but it is the one the owner left you.
    - Windows (SmartScreen): click "More info", then "Run anyway".
    - Mac (Gatekeeper): right-click the program, choose "Open", then confirm.
+     If macOS still refuses, open System Settings > Privacy & Security,
+     scroll to the message about the program, and click "Open Anyway".
+
+IF THE PROGRAM CLOSES BY ITSELF OR WON'T OPEN
+
+  It needs a computer with at least 2 GB of memory (RAM). If it doesn't work,
+  try a newer computer.
 `, buildDate, binaryList(binaries))
 }
 

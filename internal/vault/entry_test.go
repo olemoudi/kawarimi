@@ -63,6 +63,7 @@ func TestManifestCRUD(t *testing.T) {
 		Category: CategoryNotes,
 		Name:     "test",
 		Title:    "Test Entry",
+		Filename: "notes/001-test.md.age", // real entries carry the NNN- sequence prefix
 	}
 	m.AddEntry(entry)
 

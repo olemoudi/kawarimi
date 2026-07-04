@@ -45,7 +45,7 @@ sequenceDiagram
         CLI->>CLI: Write local last_checkin
         CLI->>DMS: Push heartbeat over SSH
     end
-    Note over DMS: Daily cron: quiet while current;<br/>Warning1 / Warning2 email the owner only
+    Note over DMS: Daily cron stays quiet while current, then emails Warning1 and Warning2 to the owner only
 
     Note over Owner,Recipient: Phase 3 — Overdue → final release
     DMS->>DMS: Daily cron reads last_checkin

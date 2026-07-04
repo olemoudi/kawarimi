@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"filippo.io/age"
+	"github.com/olemoudi/kawarimi/internal/atomicfile"
 	"github.com/olemoudi/kawarimi/internal/crypto"
 )
 
@@ -365,34 +366,60 @@ func (h *Header) AddOwnerSlot(password string, deviceKey []byte, deviceID string
 	return h.computeHMAC(masterKey)
 }
 
-// SaveHeader writes the header to disk.
+// SaveHeader writes the header to disk atomically, keeping the previous header as
+// vault_header.json.bak. The header holds every key slot and the wrapped identity,
+// so a torn write would brick the vault permanently — hence the atomic replace plus
+// backup, from which LoadHeader can self-heal.
 func SaveHeader(vaultDir string, h *Header) error {
 	data, err := json.MarshalIndent(h, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling header: %w", err)
 	}
 	path := filepath.Join(vaultDir, HeaderFile)
-	return os.WriteFile(path, data, 0600)
+	return atomicfile.WriteFileBackup(path, data, 0600)
 }
 
-// LoadHeader reads the header from disk.
-func LoadHeader(vaultDir string) (*Header, error) {
-	path := filepath.Join(vaultDir, HeaderFile)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading header: %w", err)
-	}
-
+// parseHeader unmarshals and version-checks header bytes.
+func parseHeader(data []byte) (*Header, error) {
 	var h Header
 	if err := json.Unmarshal(data, &h); err != nil {
 		return nil, fmt.Errorf("parsing header: %w", err)
 	}
-
 	if h.Version != HeaderVersion {
 		return nil, fmt.Errorf("unsupported vault header version: %d (expected %d)", h.Version, HeaderVersion)
 	}
-
 	return &h, nil
+}
+
+// LoadHeader reads the header from disk. If the primary header is missing or
+// corrupt (e.g. truncated by a crash mid-write), it self-heals from the atomic
+// backup written by SaveHeader, so a routine save interrupted by power loss cannot
+// lose the only copy of the key material.
+func LoadHeader(vaultDir string) (*Header, error) {
+	path := filepath.Join(vaultDir, HeaderFile)
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if h, perr := parseHeader(data); perr == nil {
+			return h, nil
+		} else {
+			err = perr
+		}
+	}
+
+	// Primary unreadable or corrupt — try the backup.
+	if bak, berr := os.ReadFile(path + ".bak"); berr == nil {
+		if h, perr := parseHeader(bak); perr == nil {
+			fmt.Fprintf(os.Stderr, "warning: %s was unreadable; recovered from %s.bak\n", HeaderFile, HeaderFile)
+			// Restore the primary from the good backup so future loads are clean.
+			_ = atomicfile.WriteFile(path, bak, 0600)
+			return h, nil
+		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("reading header: %w", err)
+	}
+	return nil, fmt.Errorf("header at %s is corrupt and no valid backup exists", path)
 }
 
 // --- Internal helpers ---

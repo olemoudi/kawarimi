@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -38,12 +39,13 @@ func (s *server) handleCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pushed, cerr := deadswitch.RecordCheckin(targets, time.Now().UTC())
-	if cerr != nil && cfg.SyncTargets.DMSRemote == "" {
-		// No cloud DMS, so the only failure path is the local write.
+	// A local-write failure is always fatal (a phantom check-in is dangerous); with
+	// no cloud DMS the local write is the only failure path.
+	if cerr != nil && (cfg.SyncTargets.DMSRemote == "" || errors.Is(cerr, deadswitch.ErrLocalCheckin)) {
 		writeError(w, http.StatusInternalServerError, cerr.Error())
 		return
 	}
-	resp := map[string]any{"ok": true, "pushed": pushed}
+	resp := map[string]any{"ok": cerr == nil, "pushed": pushed}
 	if cerr != nil {
 		resp["cloudError"] = cerr.Error()
 	}

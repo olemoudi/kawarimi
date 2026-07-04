@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+// imapTimeout bounds the whole IMAP session so a server that accepts the connection
+// and then stalls cannot hang an unattended evaluate run.
+const imapTimeout = 30 * time.Second
+
+// imapQuote produces an IMAP quoted string (RFC 3501), escaping backslash and quote.
+// Go's %q is NOT valid IMAP quoting (it escapes control chars in ways IMAP rejects).
+func imapQuote(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return `"` + s + `"`
+}
+
 // CheckIMAPForAlive connects to the IMAP server and checks for recent emails
 // with subject containing "ALIVE" from the user's email address.
 // This is a minimal IMAP client — only does LOGIN, SELECT, SEARCH, LOGOUT.
@@ -32,6 +44,9 @@ func CheckIMAPForAlive(cfg *SwitchConfig, since time.Time) (bool, error) {
 		return false, fmt.Errorf("IMAP connect: %w", err)
 	}
 	defer conn.Close()
+	// Bound every read/write in the session; without this a stalled server hangs
+	// readLine indefinitely.
+	_ = conn.SetDeadline(time.Now().Add(imapTimeout))
 
 	reader := bufio.NewReader(conn)
 
@@ -41,7 +56,7 @@ func CheckIMAPForAlive(cfg *SwitchConfig, since time.Time) (bool, error) {
 	}
 
 	// LOGIN
-	if err := imapCommand(conn, reader, "A001", fmt.Sprintf("LOGIN %q %q", cfg.SMTPUsername, cfg.SMTPPassword)); err != nil {
+	if err := imapCommand(conn, reader, "A001", fmt.Sprintf("LOGIN %s %s", imapQuote(cfg.SMTPUsername), imapQuote(cfg.SMTPPassword))); err != nil {
 		return false, fmt.Errorf("IMAP login: %w", err)
 	}
 
@@ -58,7 +73,7 @@ func CheckIMAPForAlive(cfg *SwitchConfig, since time.Time) (bool, error) {
 	sinceStr := since.Format("02-Jan-2006")
 	searchCmd := fmt.Sprintf("SEARCH SINCE %s SUBJECT ALIVE", sinceStr)
 	if cfg.UserEmail != "" {
-		searchCmd = fmt.Sprintf("SEARCH SINCE %s FROM %q SUBJECT ALIVE", sinceStr, cfg.UserEmail)
+		searchCmd = fmt.Sprintf("SEARCH SINCE %s FROM %s SUBJECT ALIVE", sinceStr, imapQuote(cfg.UserEmail))
 	}
 	searchResult, err := imapCommandWithResult(conn, reader, "A003", searchCmd)
 	if err != nil {

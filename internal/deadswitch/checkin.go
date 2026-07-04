@@ -1,14 +1,21 @@
 package deadswitch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/olemoudi/kawarimi/internal/atomicfile"
 	gosync "github.com/olemoudi/kawarimi/internal/sync"
 	"github.com/olemoudi/kawarimi/internal/vault"
 )
+
+// ErrLocalCheckin marks a failure to write the local heartbeat. It is always fatal:
+// a check-in that did not even land locally is a phantom check-in and must never be
+// reported as success.
+var ErrLocalCheckin = errors.New("writing local check-in")
 
 // dmsHeartbeatFile is the check-in file name at the root of the DMS repo. It must
 // match the path the generated workflow reads (see GenerateGitHubDMSWorkflow).
@@ -32,8 +39,8 @@ func RecordCheckin(t CheckinTargets, now time.Time) (pushed bool, err error) {
 	stamp := now.UTC().Format(time.RFC3339)
 
 	localPath := filepath.Join(t.VaultDir, vault.LastCheckinFile)
-	if err := os.WriteFile(localPath, []byte(stamp+"\n"), 0600); err != nil {
-		return false, fmt.Errorf("writing local check-in: %w", err)
+	if err := atomicfile.WriteFile(localPath, []byte(stamp+"\n"), 0600); err != nil {
+		return false, fmt.Errorf("%w: %v", ErrLocalCheckin, err)
 	}
 
 	if t.DMSRepoDir == "" || t.DMSRemote == "" {

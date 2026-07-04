@@ -88,7 +88,7 @@ func exportWithDMSKey(vaultDir string) (*vault.Vault, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading DMS key: %w", err)
 	}
-	dmsKey, err := crypto.DecodeDMSKey(strings.TrimSpace(dmsKeyBase64))
+	dmsKey, err := crypto.DecodeDMSKeyLenient(dmsKeyBase64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid DMS key: %w", err)
 	}

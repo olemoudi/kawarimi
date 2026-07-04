@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/olemoudi/kawarimi/internal/atomicfile"
 	"github.com/olemoudi/kawarimi/internal/copytext"
 	"github.com/olemoudi/kawarimi/internal/crypto"
 )
@@ -164,13 +165,13 @@ func (v *Vault) decryptData(ciphertext []byte) ([]byte, error) {
 	return crypto.Decrypt(ciphertext, v.Passphrase)
 }
 
-// encryptFile encrypts data and writes it to disk.
+// encryptFile encrypts data and writes it to disk atomically.
 func (v *Vault) encryptFile(path string, plaintext []byte) error {
 	ciphertext, err := v.encryptData(plaintext)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, ciphertext, 0600)
+	return atomicfile.WriteFile(path, ciphertext, 0600)
 }
 
 // decryptFile reads and decrypts a file.

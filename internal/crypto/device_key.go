@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/olemoudi/kawarimi/internal/atomicfile"
 )
 
 // DeviceKeyFile represents the encrypted device key stored on disk.
@@ -84,7 +86,7 @@ func SaveDeviceKeyFile(path string, dkf *DeviceKeyFile) error {
 	if err != nil {
 		return fmt.Errorf("marshaling device key file: %w", err)
 	}
-	return os.WriteFile(path, data, 0600)
+	return atomicfile.WriteFile(path, data, 0600)
 }
 
 // LoadDeviceKeyFile reads an encrypted device key from disk.

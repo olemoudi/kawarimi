@@ -102,6 +102,7 @@ func ExtractPackage(packagePath string, destDir string) (string, error) {
 		return "", fmt.Errorf("resolving destination: %w", err)
 	}
 
+	var total int64
 	for _, f := range r.File {
 		targetPath := filepath.Join(destDir, f.Name)
 
@@ -126,18 +127,30 @@ func ExtractPackage(packagePath string, destDir string) (string, error) {
 			return "", fmt.Errorf("creating parent directory: %w", err)
 		}
 
-		if err := extractFile(f, targetPath); err != nil {
+		written, err := extractFile(f, targetPath)
+		if err != nil {
 			return "", err
+		}
+		total += written
+		if total > maxPackageTotalBytes {
+			return "", fmt.Errorf("package expands to more than %d bytes — refusing (possible zip bomb)", maxPackageTotalBytes)
 		}
 	}
 
 	return filepath.Join(destDir, PackageVaultDir), nil
 }
 
-func extractFile(f *zip.File, targetPath string) error {
+// Decompressed-size caps guard against zip bombs while staying generous enough for
+// real vaults with document attachments and the bundled per-platform binaries.
+const (
+	maxPackageEntryBytes = 500 << 20 // 500 MiB per entry
+	maxPackageTotalBytes = 2 << 30   // 2 GiB total
+)
+
+func extractFile(f *zip.File, targetPath string) (int64, error) {
 	rc, err := f.Open()
 	if err != nil {
-		return fmt.Errorf("opening %s in zip: %w", f.Name, err)
+		return 0, fmt.Errorf("opening %s in zip: %w", f.Name, err)
 	}
 	defer rc.Close()
 
@@ -149,14 +162,19 @@ func extractFile(f *zip.File, targetPath string) error {
 
 	out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
 	if err != nil {
-		return fmt.Errorf("creating %s: %w", targetPath, err)
+		return 0, fmt.Errorf("creating %s: %w", targetPath, err)
 	}
 	defer out.Close()
 
-	if _, err := io.Copy(out, rc); err != nil {
-		return fmt.Errorf("extracting %s: %w", f.Name, err)
+	// Cap the decompressed size per entry (a lying zip header can't exceed this).
+	n, err := io.Copy(out, io.LimitReader(rc, maxPackageEntryBytes+1))
+	if err != nil {
+		return n, fmt.Errorf("extracting %s: %w", f.Name, err)
 	}
-	return nil
+	if n > maxPackageEntryBytes {
+		return n, fmt.Errorf("entry %s exceeds the %d-byte limit — refusing (possible zip bomb)", f.Name, maxPackageEntryBytes)
+	}
+	return n, nil
 }
 
 func addDirToZip(w *zip.Writer, srcDir string, zipPrefix string) error {

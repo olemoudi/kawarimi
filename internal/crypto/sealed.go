@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"strings"
+	"unicode"
 )
 
 const DMSKeyBytes = 32
@@ -92,6 +94,40 @@ func DecodeDMSKey(encoded string) ([]byte, error) {
 	return data, nil
 }
 
+// DecodeDMSKeyLenient decodes a DMS key copied from an email, tolerating the messes
+// mail clients introduce: leading/trailing/internal whitespace, line wrapping, the
+// URL-safe alphabet, missing padding, and invisible characters (NBSP, zero-width,
+// BOM). The recipient typing/pasting the key at the worst possible moment must not
+// be defeated by a stray space.
+func DecodeDMSKeyLenient(s string) ([]byte, error) {
+	cleaned := stripInvisible(s)
+	for _, enc := range []*base64.Encoding{
+		base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding,
+	} {
+		if data, err := enc.DecodeString(cleaned); err == nil && len(data) == DMSKeyBytes {
+			return data, nil
+		}
+	}
+	return nil, fmt.Errorf("the key is not valid — it should be %d base64 characters from the email", base64.StdEncoding.EncodedLen(DMSKeyBytes))
+}
+
+// stripInvisible removes all whitespace and invisible characters from s.
+func stripInvisible(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if unicode.IsSpace(r) { // includes NBSP (U+00A0) and NEL (U+0085)
+			continue
+		}
+		switch r {
+		case 0x200b, 0x200c, 0x200d, 0x2060, 0xfeff: // zero-width, word-joiner, BOM
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // CombinePassphrase constructs the combined passphrase from a DMS key and recipient passphrase.
 // Format: base64(dmsKey) + ":" + recipientPassphrase
 // The combined string is used as the age scrypt passphrase for V4 sealing.
@@ -108,8 +144,13 @@ func CombinePassphrase(dmsKey []byte, recipientPassphrase string) (string, error
 // SealMnemonicV4 encrypts mnemonic entropy with a combined DMS key + recipient passphrase.
 // This is the V4 key-split architecture: both the DMS key (delivered via email on trigger)
 // and the recipient passphrase (on physical card) are required to unseal.
+//
+// The passphrase is normalized (NormalizeWords) on BOTH the seal and unseal sides so
+// that seal and unseal are symmetric: an owner who re-keys and types the card with a
+// stray capital or double space cannot accidentally seal under a value the recipient
+// (whose input is normalized) can never reproduce.
 func SealMnemonicV4(entropy []byte, dmsKey []byte, recipientPassphrase string) ([]byte, error) {
-	combined, err := CombinePassphrase(dmsKey, recipientPassphrase)
+	combined, err := CombinePassphrase(dmsKey, NormalizeWords(recipientPassphrase))
 	if err != nil {
 		return nil, fmt.Errorf("combining passphrase: %w", err)
 	}
@@ -118,7 +159,7 @@ func SealMnemonicV4(entropy []byte, dmsKey []byte, recipientPassphrase string) (
 
 // UnsealMnemonicV4 decrypts a V4-sealed mnemonic payload using DMS key + recipient passphrase.
 func UnsealMnemonicV4(ciphertext []byte, dmsKey []byte, recipientPassphrase string) ([]byte, error) {
-	combined, err := CombinePassphrase(dmsKey, recipientPassphrase)
+	combined, err := CombinePassphrase(dmsKey, NormalizeWords(recipientPassphrase))
 	if err != nil {
 		return nil, fmt.Errorf("combining passphrase: %w", err)
 	}

@@ -126,6 +126,44 @@ func TestStoreSwitchPayloadAndDecrypt(t *testing.T) {
 	}
 }
 
+// Storing the payload rotates the switch identity, which orphans switch-config.age
+// unless the config is re-saved — the exact hazard `switch rekey` must handle.
+func TestSwitchConfigSurvivesPayloadRotation(t *testing.T) {
+	appDir := t.TempDir()
+	cfg := DefaultSwitchConfig()
+	cfg.UserEmail = "owner@test"
+
+	if err := StoreSwitchCloudOnly(appDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveSwitchConfig(appDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadSwitchConfig(appDir); err != nil {
+		t.Fatalf("initial config load: %v", err)
+	}
+
+	// Rotate the payload (new identity) — the old config can no longer be decrypted.
+	if err := StoreSwitchCloudOnly(appDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadSwitchConfig(appDir); err == nil {
+		t.Fatal("config unexpectedly readable after identity rotation without re-save")
+	}
+
+	// Re-saving to the new identity restores access (what rekey now does).
+	if err := SaveSwitchConfig(appDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadSwitchConfig(appDir)
+	if err != nil {
+		t.Fatalf("config load after re-save: %v", err)
+	}
+	if got.UserEmail != "owner@test" {
+		t.Errorf("config not preserved across rotation: %+v", got)
+	}
+}
+
 func TestStoreSwitchCloudOnly(t *testing.T) {
 	appDir := t.TempDir()
 

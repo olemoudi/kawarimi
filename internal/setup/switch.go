@@ -28,6 +28,40 @@ func StoreSwitchPayloadForMode(appDir string, localRelease bool) error {
 	return deadswitch.StoreSwitchDMSKey(appDir, strings.TrimSpace(string(dmsKeyBase64)))
 }
 
+// DisableCloudSwitch neutralizes the cloud dead man's switch — the real post-mortem
+// trigger. It removes the workflow from the DMS repo (so no scheduled Action runs)
+// and pushes a far-future heartbeat (so even a lingering workflow computes a negative
+// days_since and never fires). It returns an error if the repo cannot be reached;
+// callers must NOT report the switch as disabled on error, or the owner could be
+// released on while alive.
+func DisableCloudSwitch(cfg *config.Config) error {
+	if cfg.SyncTargets.DMSRemote == "" {
+		return nil
+	}
+	dmsRepoDir, err := config.DMSRepoDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dmsRepoDir, 0700); err != nil {
+		return fmt.Errorf("creating DMS repo dir: %w", err)
+	}
+	gs := gosync.NewGitSync(dmsRepoDir, cfg.SyncTargets.DMSRemote, "")
+	if err := gs.ResetToRemote(); err != nil {
+		return fmt.Errorf("syncing DMS repo from remote: %w", err)
+	}
+	if err := os.Remove(filepath.Join(dmsRepoDir, ".github", "workflows", "deadman.yml")); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing workflow: %w", err)
+	}
+	future := time.Now().UTC().AddDate(100, 0, 0).Format(time.RFC3339)
+	if err := os.WriteFile(filepath.Join(dmsRepoDir, "last_checkin"), []byte(future+"\n"), 0644); err != nil {
+		return fmt.Errorf("writing heartbeat: %w", err)
+	}
+	if err := gs.CommitAndPush("disable dead man's switch"); err != nil {
+		return fmt.Errorf("pushing disable to DMS repo: %w", err)
+	}
+	return nil
+}
+
 // SeedResult reports what SeedSwitch armed, so callers can print the follow-up
 // checklist (GitHub secrets to set) without re-reading state.
 type SeedResult struct {

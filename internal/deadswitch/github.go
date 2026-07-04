@@ -88,7 +88,9 @@ jobs:
 type dmsWorkflowParams struct {
 	Warning1Days int
 	FinalDays    int
-	Telegram     bool // include a Telegram owner-alert step
+	SMTPPort     int    // templated into the workflow (was hardcoded 587)
+	Scheme       string // "smtp" (STARTTLS) or "smtps" (implicit TLS on 465)
+	Telegram     bool   // include a Telegram owner-alert step
 }
 
 // dmsWorkflowTmpl renders the standalone DMS repo workflow. It uses [[ ]] delimiters
@@ -106,9 +108,19 @@ var dmsWorkflowTmpl = template.Must(
 // never releases (fail-closed toward disclosure, fail-open toward owner alerting). The DMS
 // key is delivered only when a check-in was read successfully AND is older than FinalDays.
 func GenerateGitHubDMSWorkflow(cfg *SwitchConfig) string {
+	port := cfg.SMTPPort
+	if port == 0 {
+		port = 587
+	}
+	scheme := "smtp" // STARTTLS (587 and most submission ports)
+	if port == 465 {
+		scheme = "smtps" // implicit TLS
+	}
 	params := dmsWorkflowParams{
 		Warning1Days: cfg.Warning1Days,
 		FinalDays:    cfg.FinalDays,
+		SMTPPort:     port,
+		Scheme:       scheme,
 		Telegram:     cfg.TelegramBotToken != "",
 	}
 	var buf bytes.Buffer
@@ -120,6 +132,10 @@ func GenerateGitHubDMSWorkflow(cfg *SwitchConfig) string {
 	return buf.String()
 }
 
+// dmsWorkflowText is the standalone DMS repo workflow. Email is sent with curl (a
+// tool preinstalled on GitHub runners and among the most stable in existence) rather
+// than a third-party Action, so nothing beyond GitHub's own actions/checkout can
+// vanish or be deprecated out from under it over the years it must keep working.
 const dmsWorkflowText = `name: Dead Man's Switch
 on:
   schedule:
@@ -158,43 +174,68 @@ jobs:
 
       - name: Alert owner of DMS misconfiguration
         if: steps.checkin.outputs.status != 'ok'
-        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde  # v3.12.0
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: 587
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Kawarimi: DEAD MAN'S SWITCH IS NOT ARMED"
-          to: ${{ secrets.USER_EMAIL }}
-          from: ${{ secrets.SMTP_USERNAME }}
-          body: |
-            Your Kawarimi dead man's switch is NOT armed.
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          USER_EMAIL: ${{ secrets.USER_EMAIL }}
+          STATUS: ${{ steps.checkin.outputs.status }}
+        run: |
+          set -euo pipefail
+          cat > message.txt <<EOF
+          From: $SMTP_USERNAME
+          To: $USER_EMAIL
+          Subject: Kawarimi: DEAD MAN'S SWITCH IS NOT ARMED
+          MIME-Version: 1.0
+          Content-Type: text/plain; charset=UTF-8
 
-            The heartbeat file 'last_checkin' is ${{ steps.checkin.outputs.status }} in
-            the DMS repository, so the switch can never trigger and your recipients
-            would never be notified.
+          Your Kawarimi dead man's switch is NOT armed.
 
-            Fix it by running:  kawarimi switch seed
+          The heartbeat file 'last_checkin' is $STATUS in the DMS repository, so the
+          switch can never trigger and your recipients would never be notified.
 
-            This message repeats daily until the switch is armed.
+          Fix it by running:  kawarimi switch seed
+
+          This message repeats daily until the switch is armed.
+          EOF
+          sed 's/$/\r/' message.txt > message.eml
+          curl --silent --show-error --ssl-reqd \
+            --url "[[.Scheme]]://$SMTP_SERVER:[[.SMTPPort]]" \
+            --user "$SMTP_USERNAME:$SMTP_PASSWORD" \
+            --mail-from "$SMTP_USERNAME" \
+            --mail-rcpt "$USER_EMAIL" \
+            --upload-file message.eml
 
       - name: Send warning to owner
         if: steps.checkin.outputs.status == 'ok' && steps.checkin.outputs.days_since >= [[.Warning1Days]] && steps.checkin.outputs.days_since < [[.FinalDays]]
-        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde  # v3.12.0
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: 587
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Kawarimi: Check-in overdue (${{ steps.checkin.outputs.days_since }} days)"
-          to: ${{ secrets.USER_EMAIL }}
-          from: ${{ secrets.SMTP_USERNAME }}
-          body: |
-            You haven't checked in for ${{ steps.checkin.outputs.days_since }} days.
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          USER_EMAIL: ${{ secrets.USER_EMAIL }}
+          DAYS: ${{ steps.checkin.outputs.days_since }}
+        run: |
+          set -euo pipefail
+          cat > message.txt <<EOF
+          From: $SMTP_USERNAME
+          To: $USER_EMAIL
+          Subject: Kawarimi: Check-in overdue ($DAYS days)
+          MIME-Version: 1.0
+          Content-Type: text/plain; charset=UTF-8
 
-            Run 'kawarimi checkin' to reset the timer.
+          You haven't checked in for $DAYS days.
 
-            If you don't check in by day [[.FinalDays]], your family will be notified.
+          Run 'kawarimi checkin' to reset the timer.
+
+          If you don't check in by day [[.FinalDays]], your family will be notified.
+          EOF
+          sed 's/$/\r/' message.txt > message.eml
+          curl --silent --show-error --ssl-reqd \
+            --url "[[.Scheme]]://$SMTP_SERVER:[[.SMTPPort]]" \
+            --user "$SMTP_USERNAME:$SMTP_PASSWORD" \
+            --mail-from "$SMTP_USERNAME" \
+            --mail-rcpt "$USER_EMAIL" \
+            --upload-file message.eml
 [[if .Telegram]]
       - name: Telegram alert to owner
         if: steps.checkin.outputs.status != 'ok' || (steps.checkin.outputs.days_since >= [[.Warning1Days]] && steps.checkin.outputs.days_since < [[.FinalDays]])
@@ -210,46 +251,67 @@ jobs:
 [[end]]
       - name: Deliver DMS key to recipients
         if: steps.checkin.outputs.status == 'ok' && steps.checkin.outputs.days_since >= [[.FinalDays]]
-        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde  # v3.12.0
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: 587
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Important: Access Information Vault"
-          to: ${{ secrets.RECIPIENT_EMAILS }}
-          from: ${{ secrets.SMTP_USERNAME }}
-          body: |
-            Mensaje automático de la caja fuerte de información Kawarimi.
-            Automated message from the Kawarimi information vault.
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          RECIPIENT_EMAILS: ${{ secrets.RECIPIENT_EMAILS }}
+          VAULT_PACKAGE_LOCATION: ${{ secrets.VAULT_PACKAGE_LOCATION }}
+          DMS_KEY: ${{ secrets.DMS_KEY }}
+          DAYS: ${{ steps.checkin.outputs.days_since }}
+        run: |
+          set -euo pipefail
+          cat > message.txt <<EOF
+          From: $SMTP_USERNAME
+          To: $RECIPIENT_EMAILS
+          Subject: Important: Access Information Vault
+          MIME-Version: 1.0
+          Content-Type: text/plain; charset=UTF-8
 
-            --- ESPAÑOL ---
-            El titular no ha dado señales de vida en ${{ steps.checkin.outputs.days_since }} días.
-            Ahora puedes acceder a la información que dejó preparada para ti.
+          Mensaje automatico de la caja fuerte de informacion Kawarimi.
+          Automated message from the Kawarimi information vault.
 
-            1. Descarga el paquete (usa siempre el MÁS RECIENTE) desde:
-                 ${{ secrets.VAULT_PACKAGE_LOCATION }}
-            2. Descomprime el archivo .zip en una carpeta.
-            3. Abre el programa kawarimi (doble clic en Windows; en Mac/Linux
-               ejecútalo con la palabra  open ) y sigue las preguntas.
-            4. Cuando te pida la CLAVE, pega este texto:
-                 ${{ secrets.DMS_KEY }}
-            5. Cuando te pida las PALABRAS, escríbelas desde la tarjeta física.
-            6. Tus archivos aparecerán en la carpeta "decrypted"; abre INDEX.md primero.
+          --- ESPANOL ---
+          El titular no ha dado senales de vida en $DAYS dias.
+          Ahora puedes acceder a la informacion que dejo preparada para ti.
 
-            --- ENGLISH ---
-            The owner has not checked in for ${{ steps.checkin.outputs.days_since }} days.
-            You may now access the information they prepared for you.
+          1. Descarga el paquete (usa siempre el MAS RECIENTE) desde:
+               $VAULT_PACKAGE_LOCATION
+          2. Descomprime el archivo .zip en una carpeta.
+          3. Abre el programa kawarimi (doble clic en Windows; en Mac/Linux
+             ejecutalo con la palabra  open ) y sigue las preguntas.
+          4. Cuando te pida la CLAVE, pega este texto:
+               $DMS_KEY
+          5. Cuando te pida las PALABRAS, escribelas desde la tarjeta fisica.
+          6. Tus archivos apareceran en la carpeta "decrypted"; abre INDEX.md primero.
 
-            1. Download the package (always use the NEWEST one) from:
-                 ${{ secrets.VAULT_PACKAGE_LOCATION }}
-            2. Unzip it into a folder.
-            3. Open the kawarimi program (double-click on Windows; on Mac/Linux
-               run it with the word  open ) and follow the prompts.
-            4. When it asks for the KEY, paste this text:
-                 ${{ secrets.DMS_KEY }}
-            5. When it asks for the WORDS, type them from the physical card.
-            6. Your files will appear in the "decrypted" folder; open INDEX.md first.
+          --- ENGLISH ---
+          The owner has not checked in for $DAYS days.
+          You may now access the information they prepared for you.
+
+          1. Download the package (always use the NEWEST one) from:
+               $VAULT_PACKAGE_LOCATION
+          2. Unzip it into a folder.
+          3. Open the kawarimi program (double-click on Windows; on Mac/Linux
+             run it with the word  open ) and follow the prompts.
+          4. When it asks for the KEY, paste this text:
+               $DMS_KEY
+          5. When it asks for the WORDS, type them from the physical card.
+          6. Your files will appear in the "decrypted" folder; open INDEX.md first.
+          EOF
+          sed 's/$/\r/' message.txt > message.eml
+          rcpts=()
+          IFS=',' read -ra addrs <<< "$RECIPIENT_EMAILS"
+          for a in "${addrs[@]}"; do
+            a=$(echo "$a" | xargs)
+            [ -n "$a" ] && rcpts+=(--mail-rcpt "$a")
+          done
+          curl --silent --show-error --ssl-reqd \
+            --url "[[.Scheme]]://$SMTP_SERVER:[[.SMTPPort]]" \
+            --user "$SMTP_USERNAME:$SMTP_PASSWORD" \
+            --mail-from "$SMTP_USERNAME" \
+            "${rcpts[@]}" \
+            --upload-file message.eml
 `
 
 // InstallGitHubWorkflow writes the workflow file to the vault's .github/workflows/ directory.

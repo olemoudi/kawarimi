@@ -168,8 +168,34 @@ You have unlimited stamina. The human does not. Use your persistence wisely -- l
 
 ## Testing
 
+This tool guards people's most sensitive data and only fires once, unattended,
+possibly years later — so testing is not negotiable. Do not spare on it.
+
 - Ensure good coverage.
 - Be proactive creating new tests when a new functionality is implemented.
+- **Full unattended testing.** `go test ./...` must exercise every scenario end to
+  end with **no network, no credentials, and no manual steps**. Never write a test
+  that needs a real SMTP/IMAP server, a real Telegram bot, the real GitHub API, a
+  real remote, or a human to click something. If a feature talks to an external
+  actor, mock that actor.
+- **Mock every external actor.** `internal/testenv` is the shared harness: an
+  isolated `HOME`, an in-process SMTP server (`MailServer`), Telegram and GitHub
+  API mocks (`TelegramServer`, `GitHubServer`), and a local bare git repo standing
+  in for the cloud DMS repo (`BareRepo`). Reuse and extend it — do not spin up ad
+  hoc servers per test. New integration seams to an external service should honor a
+  test override (e.g. an env-var base URL like `KAWARIMI_GITHUB_API` /
+  `KAWARIMI_TELEGRAM_API`) so the harness can redirect them.
+- **Cover the whole vault lifecycle.** End-to-end scenarios live in
+  `internal/lifecycle`: init → arm → check-in → overdue → warnings → final release
+  → recipient decrypts, plus fail-closed (missing/unparseable heartbeat), check-in
+  reset, idempotent trigger, wrong-secret negatives, rekey, cloud-only vs
+  local-release, and the GitHub cloud automation. When you change the dead man's
+  switch, the key-split, the release paths, or the setup/GUI flow, add or update a
+  scenario there — a change to disclosure behavior without a lifecycle test is a
+  bug in the change.
+- The one thing `go test` cannot run is the GitHub Actions workflow YAML itself;
+  cover it with the golden/invariant tests in `internal/deadswitch` and prove the
+  delivered `DMS_KEY` opens the vault (see the cloud-automation test).
 
 ## Documentation
 

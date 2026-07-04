@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"filippo.io/age"
+	"github.com/olemoudi/kawarimi/internal/atomicfile"
 )
 
 // ScryptWorkFactor overrides the age scrypt work factor for v1 encryption.
@@ -65,7 +66,7 @@ func EncryptFile(path string, plaintext []byte, passphrase string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, ciphertext, 0600)
+	return atomicfile.WriteFile(path, ciphertext, 0600)
 }
 
 // DecryptFile reads an encrypted file and returns the decrypted plaintext.
