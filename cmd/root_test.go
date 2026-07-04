@@ -57,3 +57,23 @@ func TestOwnerDeviceKeyExists(t *testing.T) {
 		t.Error("device key should be detected once present")
 	}
 }
+
+// firstRunDecision gates auto-launching the browser setup wizard on a bare
+// invocation: only a completely fresh machine qualifies.
+func TestFirstRunDecision(t *testing.T) {
+	cases := []struct {
+		config, deviceKey, payload, want bool
+	}{
+		{false, false, false, true}, // fresh download → wizard
+		{true, false, false, false}, // configured → help
+		{false, true, false, false}, // owner device (config lost) → never clobber
+		{false, false, true, false}, // recipient package nearby → recipient path
+		{true, true, false, false},
+	}
+	for _, c := range cases {
+		if got := firstRunDecision(c.config, c.deviceKey, c.payload); got != c.want {
+			t.Errorf("firstRunDecision(config=%v, deviceKey=%v, payload=%v) = %v, want %v",
+				c.config, c.deviceKey, c.payload, got, c.want)
+		}
+	}
+}

@@ -38,11 +38,376 @@ async function api(path, opts = {}) {
 
 let toastTimer = null;
 function toast(msg, isErr) {
-  const t = document.getElementById("toast");
-  t.textContent = msg;
-  t.className = "toast show" + (isErr ? " err" : "");
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "toast show" + (isErr ? " err" : "");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.className = "toast"; }, 3200);
+  toastTimer = setTimeout(() => { el.className = "toast"; }, 3800);
+}
+
+// ---- i18n -----------------------------------------------------------------------
+
+// Two full dictionaries; `lang` comes from localStorage, defaulting to the browser
+// language (Spanish-speaking users get Spanish, everyone else English). The topbar
+// toggle switches and persists it. fmt() fills {0},{1}… placeholders.
+const I18N = {
+  en: {
+    ownerConsole: "owner console",
+    quit: "Quit",
+    themeTitle: "Theme",
+    langTitle: "Idioma: cambiar a español",
+    loading: "Loading…",
+    cannotReach: "Cannot reach the console",
+    quitConfirm: "Stop the kawarimi console? You can restart it by running kawarimi again.",
+    quitDone: "kawarimi console stopped. You can close this tab.",
+    navDashboard: "Dashboard",
+    navEntries: "Entries",
+
+    unlockTitle: "Unlock your vault",
+    unlockSub: "Enter your vault password to manage entries and the dead man's switch.",
+    password: "Password",
+    unlockBtn: "Unlock",
+    vaultPassword: "Vault password",
+
+    eyebrowStatus: "Switch status",
+    stNotArmed: "NOT ARMED",
+    stArmed: "ARMED",
+    stQuiet: "ARMED · QUIET",
+    stOverdue: "OVERDUE",
+    stReleasing: "RELEASING",
+    noteNotSetup: "The dead man's switch is not set up yet.",
+    noteNoCheckin: "No check-in recorded yet — check in once to start the clock.",
+    notePastRelease: "Past the release threshold — the cloud may already have delivered the key. Check in NOW if you are seeing this.",
+    noteOverdueUrgent: "Final release on day {0}. Check in now.",
+    noteOverdueWarn: "Warnings are being sent. Final release on day {0}.",
+    noteQuiet1: "Checked in {0} day ago. Nothing will be sent.",
+    noteQuietN: "Checked in {0} days ago. Nothing will be sent.",
+    tickDay0: "day 0",
+    tickWarn1: "warn 1 · {0}d",
+    tickWarn2: "warn 2 · {0}d",
+    tickRelease: "release · {0}d",
+    checkinBtn: "Check in now",
+    setupSwitchBtn: "Set up the dead man's switch",
+    verifyBtn: "Verify switch",
+    factEntries: "Entries",
+    factLastCheckin: "Last check-in",
+    factReleaseMode: "Release mode",
+    factVault: "Vault",
+    modeCloudOnly: "cloud-only",
+    modeCloudPlus: "cloud + this machine",
+    never: "never",
+    toastCheckinCloud: "Checked in — timer reset, cloud updated.",
+    toastCheckinLocal: "Checked in — timer reset.",
+    toastCheckinCloudFail: "Checked in locally, but the cloud switch was NOT updated: {0}",
+    toastVerifyOk: "Switch verified — armed and current.",
+    toastVerifyWarn: "Switch needs attention — run 'kawarimi switch verify' for details.",
+
+    entriesTitle: "Entries",
+    addNote: "+ Note",
+    addCredential: "+ Credential",
+    emptyVault: "Nothing in the vault yet. What you add here is what your recipients receive.",
+    writeNote: "Write a note",
+    addCredentialLong: "Add a credential",
+    loadingEntries: "Loading entries…",
+    catNote: "Note",
+    catCredential: "Credential",
+    catDocument: "Document",
+    back: "← Back",
+    cancel: "← Cancel",
+    edit: "Edit",
+    del: "Delete",
+    delConfirm: "Delete “{0}”? This cannot be undone.",
+    binaryDoc: "Binary document ({0} bytes). Manage documents with the CLI.",
+    fService: "Service", fURL: "URL", fUsername: "Username", fPassword: "Password", fNotes: "Notes",
+    copyBtn: "Copy", copied: "Copied", show: "Show", hide: "Hide",
+    copyFail: "Copy failed — select and copy manually.",
+    newNote: "New note", editNote: "Edit note", newCred: "New credential", editCred: "Edit credential",
+    noteTitle: "Title", noteContent: "Content",
+    notePh: "Note title", noteContentPh: "Write your note (Markdown supported)",
+    credServicePh: "e.g. Bank", credNotesPh: "(optional)",
+    create: "Create", save: "Save",
+    toastCreated: "Entry created.", toastSaved: "Entry saved.", toastDeleted: "Entry deleted.",
+    errTitleRequired: "A title is required.", errServiceRequired: "A service name is required.",
+
+    wizSteps: ["Create vault", "Save secrets", "Dead man's switch", "Cloud (GitHub)", "Package", "Done"],
+    wCreateTitle: "Create your vault",
+    wCreateSub: "This password unlocks the vault for daily use on this device. Pick something strong you can remember — you will also get a recovery code and a paper backup in the next step.",
+    wConfirmPw: "Confirm password",
+    wFolder: "Vault folder",
+    wOptional: "(optional)",
+    wFolderPh: "(default) ~/kawarimi-vault",
+    wPwPh: "Choose a strong password",
+    wPw2Ph: "Repeat password",
+    wCreateBtn: "Create vault",
+    errPwShort: "Use at least 8 characters.",
+    errPwMismatch: "Passwords do not match.",
+
+    wSecretsTitle: "Write these down now",
+    wSecretsSub: "These are shown only once. Store them safely and do not reload this page until you have saved them.",
+    wMnemonic: "Mnemonic words",
+    wMnemonicSub: "Your personal backup — store on paper, in a safe place.",
+    wRecovery: "Recovery code",
+    wRecoverySub: "Regain access if you lose this device.",
+    wCard: "Recipient passphrase",
+    wCardSub: "Print this on a card and give it to your recipients. They will need it — and it alone opens nothing.",
+    print: "Print",
+    savedCheck: "I have saved these securely",
+    wSecretsNext: "Continue to the dead man's switch",
+
+    wSwitchTitle: "Dead man's switch",
+    wSmtpH: "Email (SMTP)",
+    wSmtpSub: "kawarimi sends warnings to you — and, one day, the delivery email to your recipients — through your own email account.",
+    wSmtpHelp: "Gmail: your normal password will not work. Create an “App Password” at myaccount.google.com/apppasswords and paste it below. Ports 587 and 465 both work.",
+    wSmtpServer: "SMTP server", wSmtpPort: "Port", wSmtpUser: "SMTP username", wSmtpPass: "SMTP password",
+    wSmtpPassPh: "app password",
+    wSender: "Sender email", wSenderHint: "defaults to the username",
+    wRecipH: "Recipients & timing",
+    wYourEmail: "Your email (for warnings)",
+    wRecipients: "Recipient emails",
+    wRecipientsHint: "one per line or comma-separated — who receives the vault",
+    wTimingHelp: "If you stop checking in: day {0} — you get a warning; day {1} — urgent warnings; day {2} — the key is emailed to your recipients. Any check-in resets the clock to day 0.",
+    wW1: "Warning 1 (days)", wW2: "Warning 2 (days)", wFinal: "Final release (days)",
+    wPkgLoc: "Vault package location",
+    wPkgLocPh: "Link where recipients will download the package",
+    wPkgLocHelp: "Where you will upload the package built in step 5 — a Google Drive / Dropbox shared link, a web address, anything your recipients can open years from now. This link is included in the delivery email.",
+    wOptH: "Optional channels",
+    wTgToken: "Telegram bot token", wTgChat: "Telegram chat ID",
+    wImapServer: "IMAP server", wImapPort: "IMAP port",
+    wImapPh: "(optional) check in by replying to emails",
+    wModeH: "Final release mode",
+    wModeCloud: "Cloud only",
+    wModeCloudHint: "(recommended — this machine holds no key)",
+    wModeLocal: "Also allow release from this machine",
+    wSaveNext: "Save & continue",
+    backBtn: "Back",
+    errThresholds: "Days must increase: warning 1 < warning 2 < final release.",
+
+    wCloudTitle: "Arm the cloud switch",
+    wCloudSub: "kawarimi creates a private GitHub repository, sets its secrets, and installs the automation that emails your recipients if you stop checking in. It runs on GitHub even when your computer is off.",
+    wCloudHelp: "You need a GitHub account and a token: create one at github.com/settings/tokens/new?scopes=repo (the link preselects the “repo” scope), set any expiration, and paste it below. The token is used once, only to set things up, and is never stored.",
+    wCloudTokenLink: "Create the token (opens GitHub)",
+    wGhToken: "GitHub personal access token",
+    wGhRepo: "New private repo name",
+    wCloudBtn: "Create repo & arm the switch",
+    wCloudWorking: "Working… (this can take a few seconds)",
+
+    wPkgTitle: "Build the recipient package",
+    wPkgSub: "A zip with the encrypted vault and instructions — no secrets inside. Upload it to the location you set in step 3.",
+    wPkgAuto: "Include recipient apps",
+    wPkgAutoHint: "(builds the program for every platform; needs the source checkout)",
+    wPkgNone: "No apps",
+    wPkgNoneHint: "(recipients download kawarimi themselves)",
+    wPkgOut: "Output file",
+    wPkgOutPh: "(default) ~/kawarimi-vault.zip",
+    wPkgBuild: "Build package",
+    wPkgBuilding: "Building…",
+    wPkgRebuild: "Rebuild",
+    wPkgBuilt: "✓ Built {0} ({1} MB)",
+    finish: "Finish",
+
+    wDoneTitle: "You're all set",
+    wDoneSub: "Your vault is created and the cloud dead man's switch is armed. Add entries and check in from the dashboard. Remember to hand each recipient their card and to upload the package to its location.",
+    goDashboard: "Go to dashboard",
+  },
+
+  es: {
+    ownerConsole: "consola del titular",
+    quit: "Salir",
+    themeTitle: "Tema",
+    langTitle: "Language: switch to English",
+    loading: "Cargando…",
+    cannotReach: "No se puede conectar con la consola",
+    quitConfirm: "¿Detener la consola de kawarimi? Puedes volver a abrirla ejecutando kawarimi de nuevo.",
+    quitDone: "Consola de kawarimi detenida. Puedes cerrar esta pestaña.",
+    navDashboard: "Panel",
+    navEntries: "Contenido",
+
+    unlockTitle: "Desbloquea tu caja fuerte",
+    unlockSub: "Introduce la contraseña de la caja fuerte para gestionar el contenido y el interruptor.",
+    password: "Contraseña",
+    unlockBtn: "Desbloquear",
+    vaultPassword: "Contraseña de la caja fuerte",
+
+    eyebrowStatus: "Estado del interruptor",
+    stNotArmed: "SIN ARMAR",
+    stArmed: "ARMADA",
+    stQuiet: "ARMADA · EN SILENCIO",
+    stOverdue: "ATRASADA",
+    stReleasing: "ENTREGANDO",
+    noteNotSetup: "El interruptor de hombre muerto aún no está configurado.",
+    noteNoCheckin: "Aún no hay señales de vida registradas — da una primera señal para poner en marcha el reloj.",
+    notePastRelease: "Superado el umbral de entrega — puede que la nube ya haya enviado la clave. Da señales de vida AHORA si estás viendo esto.",
+    noteOverdueUrgent: "Entrega final el día {0}. Da señales de vida ahora.",
+    noteOverdueWarn: "Se están enviando avisos. Entrega final el día {0}.",
+    noteQuiet1: "Diste señales de vida hace {0} día. No se enviará nada.",
+    noteQuietN: "Diste señales de vida hace {0} días. No se enviará nada.",
+    tickDay0: "día 0",
+    tickWarn1: "aviso 1 · {0}d",
+    tickWarn2: "aviso 2 · {0}d",
+    tickRelease: "entrega · {0}d",
+    checkinBtn: "Dar señales de vida",
+    setupSwitchBtn: "Configurar el interruptor",
+    verifyBtn: "Verificar interruptor",
+    factEntries: "Elementos",
+    factLastCheckin: "Última señal",
+    factReleaseMode: "Modo de entrega",
+    factVault: "Caja fuerte",
+    modeCloudOnly: "solo nube",
+    modeCloudPlus: "nube + este equipo",
+    never: "nunca",
+    toastCheckinCloud: "Señal registrada — reloj a cero, nube actualizada.",
+    toastCheckinLocal: "Señal registrada — reloj a cero.",
+    toastCheckinCloudFail: "Señal registrada en este equipo, pero la nube NO se actualizó: {0}",
+    toastVerifyOk: "Interruptor verificado — armado y al día.",
+    toastVerifyWarn: "El interruptor necesita atención — ejecuta 'kawarimi switch verify' para ver detalles.",
+
+    entriesTitle: "Contenido",
+    addNote: "+ Nota",
+    addCredential: "+ Credencial",
+    emptyVault: "La caja fuerte está vacía. Lo que añadas aquí es lo que recibirán tus destinatarios.",
+    writeNote: "Escribir una nota",
+    addCredentialLong: "Añadir una credencial",
+    loadingEntries: "Cargando contenido…",
+    catNote: "Nota",
+    catCredential: "Credencial",
+    catDocument: "Documento",
+    back: "← Volver",
+    cancel: "← Cancelar",
+    edit: "Editar",
+    del: "Eliminar",
+    delConfirm: "¿Eliminar “{0}”? No se puede deshacer.",
+    binaryDoc: "Documento binario ({0} bytes). Gestiona los documentos desde la línea de comandos.",
+    fService: "Servicio", fURL: "URL", fUsername: "Usuario", fPassword: "Contraseña", fNotes: "Notas",
+    copyBtn: "Copiar", copied: "Copiado", show: "Mostrar", hide: "Ocultar",
+    copyFail: "No se pudo copiar — selecciona y copia a mano.",
+    newNote: "Nueva nota", editNote: "Editar nota", newCred: "Nueva credencial", editCred: "Editar credencial",
+    noteTitle: "Título", noteContent: "Contenido",
+    notePh: "Título de la nota", noteContentPh: "Escribe tu nota (admite Markdown)",
+    credServicePh: "p. ej. Banco", credNotesPh: "(opcional)",
+    create: "Crear", save: "Guardar",
+    toastCreated: "Elemento creado.", toastSaved: "Elemento guardado.", toastDeleted: "Elemento eliminado.",
+    errTitleRequired: "Hace falta un título.", errServiceRequired: "Hace falta el nombre del servicio.",
+
+    wizSteps: ["Crear caja fuerte", "Guardar secretos", "Interruptor", "Nube (GitHub)", "Paquete", "Listo"],
+    wCreateTitle: "Crea tu caja fuerte",
+    wCreateSub: "Esta contraseña desbloquea la caja fuerte en este equipo para el día a día. Elige una fuerte que recuerdes — en el siguiente paso recibirás además un código de recuperación y una copia en papel.",
+    wConfirmPw: "Confirma la contraseña",
+    wFolder: "Carpeta de la caja fuerte",
+    wOptional: "(opcional)",
+    wFolderPh: "(por defecto) ~/kawarimi-vault",
+    wPwPh: "Elige una contraseña fuerte",
+    wPw2Ph: "Repite la contraseña",
+    wCreateBtn: "Crear caja fuerte",
+    errPwShort: "Usa al menos 8 caracteres.",
+    errPwMismatch: "Las contraseñas no coinciden.",
+
+    wSecretsTitle: "Apunta esto ahora",
+    wSecretsSub: "Se muestran una sola vez. Guárdalos en un lugar seguro y no recargues esta página hasta haberlos guardado.",
+    wMnemonic: "Palabras mnemónicas",
+    wMnemonicSub: "Tu copia de seguridad personal — guárdala en papel, en un lugar seguro.",
+    wRecovery: "Código de recuperación",
+    wRecoverySub: "Para recuperar el acceso si pierdes este equipo.",
+    wCard: "Frase del destinatario",
+    wCardSub: "Imprímela en una tarjeta y dásela a tus destinatarios. La necesitarán — y por sí sola no abre nada.",
+    print: "Imprimir",
+    savedCheck: "He guardado todo en un lugar seguro",
+    wSecretsNext: "Continuar con el interruptor",
+
+    wSwitchTitle: "Interruptor de hombre muerto",
+    wSmtpH: "Correo (SMTP)",
+    wSmtpSub: "kawarimi te envía los avisos — y, algún día, el correo de entrega a tus destinatarios — a través de tu propia cuenta de correo.",
+    wSmtpHelp: "Gmail: tu contraseña normal no funcionará. Crea una “Contraseña de aplicación” en myaccount.google.com/apppasswords y pégala abajo. Sirven los puertos 587 y 465.",
+    wSmtpServer: "Servidor SMTP", wSmtpPort: "Puerto", wSmtpUser: "Usuario SMTP", wSmtpPass: "Contraseña SMTP",
+    wSmtpPassPh: "contraseña de aplicación",
+    wSender: "Correo remitente", wSenderHint: "por defecto, el usuario",
+    wRecipH: "Destinatarios y calendario",
+    wYourEmail: "Tu correo (para los avisos)",
+    wRecipients: "Correos de los destinatarios",
+    wRecipientsHint: "uno por línea o separados por comas — quiénes reciben la caja fuerte",
+    wTimingHelp: "Si dejas de dar señales de vida: día {0} — recibes un aviso; día {1} — avisos urgentes; día {2} — la clave se envía por correo a tus destinatarios. Cualquier señal de vida vuelve a poner el reloj a cero.",
+    wW1: "Aviso 1 (días)", wW2: "Aviso 2 (días)", wFinal: "Entrega final (días)",
+    wPkgLoc: "Ubicación del paquete",
+    wPkgLocPh: "Enlace desde donde tus destinatarios descargarán el paquete",
+    wPkgLocHelp: "Dónde subirás el paquete que se genera en el paso 5 — un enlace compartido de Google Drive / Dropbox, una dirección web… algo que tus destinatarios puedan abrir dentro de años. Este enlace se incluye en el correo de entrega.",
+    wOptH: "Canales opcionales",
+    wTgToken: "Token del bot de Telegram", wTgChat: "Chat ID de Telegram",
+    wImapServer: "Servidor IMAP", wImapPort: "Puerto IMAP",
+    wImapPh: "(opcional) dar señales respondiendo a los correos",
+    wModeH: "Modo de entrega final",
+    wModeCloud: "Solo nube",
+    wModeCloudHint: "(recomendado — este equipo no guarda ninguna clave)",
+    wModeLocal: "Permitir también la entrega desde este equipo",
+    wSaveNext: "Guardar y continuar",
+    backBtn: "Atrás",
+    errThresholds: "Los días deben ir en aumento: aviso 1 < aviso 2 < entrega final.",
+
+    wCloudTitle: "Armar el interruptor en la nube",
+    wCloudSub: "kawarimi crea un repositorio privado de GitHub, configura sus secretos e instala la automatización que enviará el correo a tus destinatarios si dejas de dar señales de vida. Funciona en GitHub aunque tu ordenador esté apagado.",
+    wCloudHelp: "Necesitas una cuenta de GitHub y un token: créalo en github.com/settings/tokens/new?scopes=repo (el enlace ya preselecciona el permiso “repo”), elige cualquier caducidad y pégalo abajo. El token se usa una sola vez, solo para configurar, y no se guarda.",
+    wCloudTokenLink: "Crear el token (abre GitHub)",
+    wGhToken: "Token personal de GitHub",
+    wGhRepo: "Nombre del nuevo repositorio privado",
+    wCloudBtn: "Crear repositorio y armar el interruptor",
+    wCloudWorking: "Trabajando… (puede tardar unos segundos)",
+
+    wPkgTitle: "Generar el paquete para tus destinatarios",
+    wPkgSub: "Un zip con la caja fuerte cifrada e instrucciones — sin ningún secreto dentro. Súbelo a la ubicación que indicaste en el paso 3.",
+    wPkgAuto: "Incluir los programas",
+    wPkgAutoHint: "(compila el programa para cada plataforma; requiere el código fuente)",
+    wPkgNone: "Sin programas",
+    wPkgNoneHint: "(los destinatarios descargan kawarimi por su cuenta)",
+    wPkgOut: "Archivo de salida",
+    wPkgOutPh: "(por defecto) ~/kawarimi-vault.zip",
+    wPkgBuild: "Generar paquete",
+    wPkgBuilding: "Generando…",
+    wPkgRebuild: "Volver a generar",
+    wPkgBuilt: "✓ Generado {0} ({1} MB)",
+    finish: "Terminar",
+
+    wDoneTitle: "Todo listo",
+    wDoneSub: "Tu caja fuerte está creada y el interruptor de la nube está armado. Añade contenido y da señales de vida desde el panel. Recuerda entregar a cada destinatario su tarjeta y subir el paquete a su ubicación.",
+    goDashboard: "Ir al panel",
+  },
+};
+
+let lang = (function () {
+  const saved = localStorage.getItem("kawarimi-lang");
+  if (saved === "es" || saved === "en") return saved;
+  return (navigator.language || "").toLowerCase().startsWith("es") ? "es" : "en";
+})();
+
+function t(key) { return (I18N[lang] && I18N[lang][key]) ?? I18N.en[key] ?? key; }
+function fmt(s, ...args) { return s.replace(/\{(\d)\}/g, (_, i) => String(args[i])); }
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  const btn = document.getElementById("langBtn");
+  if (btn) { btn.textContent = lang.toUpperCase(); btn.title = t("langTitle"); }
+  const sub = document.querySelector(".brand-sub");
+  if (sub) sub.textContent = t("ownerConsole");
+  const quit = document.getElementById("quitBtn");
+  if (quit) quit.textContent = t("quit");
+  const theme = document.getElementById("themeBtn");
+  if (theme) theme.title = t("themeTitle");
+}
+
+function initLang() {
+  applyLang();
+  document.getElementById("langBtn").addEventListener("click", () => {
+    lang = lang === "es" ? "en" : "es";
+    localStorage.setItem("kawarimi-lang", lang);
+    applyLang();
+    if (state) render();
+  });
+}
+
+// help() renders an inline guidance line; URLs inside the text become links.
+function help(text) {
+  const parts = text.split(/(\S+\.(?:com|org)\S*)/g);
+  return h("p", { class: "help" }, parts.map((p) =>
+    /\.(com|org)/.test(p) && !p.includes(" ")
+      ? h("a", { href: "https://" + p.replace(/^https?:\/\//, ""), target: "_blank", rel: "noreferrer" }, p)
+      : p));
 }
 
 // ---- app state + routing ------------------------------------------------------
@@ -73,6 +438,17 @@ function render() {
   return viewDashboard();
 }
 
+// appShell wraps unlocked-state content with the top navigation.
+function appShell(active, ...content) {
+  const tab = (id, label) => h("button", {
+    class: "navtab" + (active === id ? " active" : ""), type: "button",
+    onclick: () => { nav = id; render(); }
+  }, label);
+  return h("div", null,
+    h("div", { class: "navbar" }, tab("dashboard", t("navDashboard")), tab("entries", t("navEntries"))),
+    ...content);
+}
+
 // startSwitchSetup enters the wizard at the dead-man's-switch step for a vault that
 // already exists but has no switch configured.
 function startSwitchSetup() {
@@ -89,23 +465,12 @@ function exitWizardToDashboard() {
   refresh();
 }
 
-// appShell wraps unlocked-state content with the top navigation.
-function appShell(active, ...content) {
-  const tab = (id, label) => h("button", {
-    class: "navtab" + (active === id ? " active" : ""), type: "button",
-    onclick: () => { nav = id; render(); }
-  }, label);
-  return h("div", null,
-    h("div", { class: "navbar" }, tab("dashboard", "Dashboard"), tab("entries", "Entries")),
-    ...content);
-}
-
 // ---- unlock -------------------------------------------------------------------
 
 function viewUnlock() {
   const err = h("div", { class: "error" });
-  const pw = h("input", { type: "password", id: "pw", placeholder: "Vault password", autofocus: "true" });
-  const btn = h("button", { class: "btn", type: "submit" }, "Unlock");
+  const pw = h("input", { type: "password", id: "pw", placeholder: t("vaultPassword"), autofocus: "true" });
+  const btn = h("button", { class: "btn", type: "submit" }, t("unlockBtn"));
 
   const form = h("form", {
     onsubmit: async (e) => {
@@ -122,9 +487,9 @@ function viewUnlock() {
       }
     }
   },
-    h("h1", null, "Unlock your vault"),
-    h("p", { class: "sub" }, "Enter your daily vault password to manage entries and the dead man's switch."),
-    h("label", null, "Password"),
+    h("h1", null, t("unlockTitle")),
+    h("p", { class: "sub" }, t("unlockSub")),
+    h("label", null, t("password")),
     pw, err,
     h("div", { class: "btn-row" }, btn)
   );
@@ -137,13 +502,13 @@ function viewUnlock() {
 
 // switchStatus derives the state word + tone the whole page keys off.
 function switchStatus() {
-  if (!state.switchConfigured) return { word: "NOT ARMED", tone: "off", note: "The dead man's switch is not set up yet." };
-  if (state.daysSince < 0) return { word: "ARMED", tone: "warn", note: "No check-in recorded yet — check in once to start the clock." };
+  if (!state.switchConfigured) return { word: t("stNotArmed"), tone: "off", note: t("noteNotSetup") };
+  if (state.daysSince < 0) return { word: t("stArmed"), tone: "warn", note: t("noteNoCheckin") };
   const d = state.daysSince, w1 = state.warning1Days, w2 = state.warning2Days, f = state.finalDays;
-  if (f > 0 && d >= f) return { word: "RELEASING", tone: "alarm", note: "Past the release threshold — the cloud may already have delivered the key. Check in NOW if you are seeing this." };
-  if (w2 > 0 && d >= w2) return { word: "OVERDUE", tone: "alarm", note: "Final release on day " + f + ". Check in now." };
-  if (w1 > 0 && d >= w1) return { word: "OVERDUE", tone: "warn", note: "Warnings are being sent. Final release on day " + f + "." };
-  return { word: "ARMED · QUIET", tone: "quiet", note: "Checked in " + d + (d === 1 ? " day" : " days") + " ago. Nothing will be sent." };
+  if (f > 0 && d >= f) return { word: t("stReleasing"), tone: "alarm", note: t("notePastRelease") };
+  if (w2 > 0 && d >= w2) return { word: t("stOverdue"), tone: "alarm", note: fmt(t("noteOverdueUrgent"), f) };
+  if (w1 > 0 && d >= w1) return { word: t("stOverdue"), tone: "warn", note: fmt(t("noteOverdueWarn"), f) };
+  return { word: t("stQuiet"), tone: "quiet", note: fmt(t(d === 1 ? "noteQuiet1" : "noteQuietN"), d) };
 }
 
 function updateStateDot() {
@@ -173,10 +538,10 @@ function timelineNode() {
     h("div", { class: "tl-marker " + tone, style: "left:" + markerPct + "%" }));
 
   const ticks = h("div", { class: "tl-ticks" },
-    h("div", { class: "tl-tick start", style: "left:0" }, "day 0"),
-    h("div", { class: "tl-tick", style: "left:" + pct(w1) + "%" }, "warn 1 · " + w1 + "d"),
-    h("div", { class: "tl-tick", style: "left:" + pct(w2) + "%" }, "warn 2 · " + w2 + "d"),
-    h("div", { class: "tl-tick end", style: "left:100%" }, "release · " + f + "d"));
+    h("div", { class: "tl-tick start", style: "left:0" }, t("tickDay0")),
+    h("div", { class: "tl-tick", style: "left:" + pct(w1) + "%" }, fmt(t("tickWarn1"), w1)),
+    h("div", { class: "tl-tick", style: "left:" + pct(w2) + "%" }, fmt(t("tickWarn2"), w2)),
+    h("div", { class: "tl-tick end", style: "left:100%" }, fmt(t("tickRelease"), f)));
 
   return h("div", { class: "timeline" }, track, ticks);
 }
@@ -186,25 +551,25 @@ function viewDashboard() {
   const st = switchStatus();
 
   const facts = h("div", { class: "facts" },
-    fact("Entries", String(state.entryCount)),
-    fact("Last check-in", state.lastCheckin || "never"),
-    state.switchConfigured ? fact("Release mode", state.cloudOnly ? "cloud-only" : "cloud + this machine") : null,
-    fact("Vault", state.vaultDir || "—", true));
+    fact(t("factEntries"), String(state.entryCount)),
+    fact(t("factLastCheckin"), state.lastCheckin || t("never")),
+    state.switchConfigured ? fact(t("factReleaseMode"), state.cloudOnly ? t("modeCloudOnly") : t("modeCloudPlus")) : null,
+    fact(t("factVault"), state.vaultDir || "—", true));
 
   setView(appShell("dashboard",
     h("div", { class: "card" },
-      h("p", { class: "eyebrow" }, "Switch status"),
+      h("p", { class: "eyebrow" }, t("eyebrowStatus")),
       h("div", { class: "switch-state" },
         h("span", { class: "switch-word " + st.tone }, st.word),
         h("span", { class: "switch-note" }, st.note)),
       timelineNode(),
       h("div", { class: "btn-row" },
         state.switchConfigured
-          ? h("button", { class: "btn", type: "button", onclick: doCheckin }, "Check in now")
-          : h("button", { class: "btn", type: "button", onclick: startSwitchSetup }, "Set up the dead man's switch"),
+          ? h("button", { class: "btn", type: "button", onclick: doCheckin }, t("checkinBtn"))
+          : h("button", { class: "btn", type: "button", onclick: startSwitchSetup }, t("setupSwitchBtn")),
         h("span", { class: "spacer" }),
         state.switchConfigured
-          ? h("button", { class: "btn btn-ghost", type: "button", onclick: doVerify }, "Verify switch")
+          ? h("button", { class: "btn btn-ghost", type: "button", onclick: doVerify }, t("verifyBtn"))
           : null),
       facts)
   ));
@@ -215,12 +580,41 @@ function fact(k, v, wide) {
   return h("div", { class: "fact" + (wide ? " wide" : "") }, h("div", { class: "k" }, k), h("div", { class: "v" }, v));
 }
 
+async function doCheckin(e) {
+  const btn = e.target; btn.disabled = true;
+  try {
+    const r = await api("/api/checkin", { method: "POST" });
+    if (r.pushed) {
+      toast(t("toastCheckinCloud"));
+    } else if (r.cloudError) {
+      toast(fmt(t("toastCheckinCloudFail"), r.cloudError), true);
+    } else {
+      toast(t("toastCheckinLocal"));
+    }
+    await refresh();
+  } catch (ex) {
+    toast(ex.message, true); btn.disabled = false;
+  }
+}
+
+async function doVerify(e) {
+  const btn = e.target; btn.disabled = true;
+  try {
+    const r = await api("/api/switch/verify", { method: "POST" });
+    toast(r.ok ? t("toastVerifyOk") : t("toastVerifyWarn"), !r.ok);
+  } catch (ex) {
+    toast(ex.message, true);
+  } finally { btn.disabled = false; }
+}
+
 // ---- entries ------------------------------------------------------------------
 
-const CAT_LABEL = { notes: "Note", credentials: "Credential", documents: "Document" };
+function catLabel(c) {
+  return c === "notes" ? t("catNote") : c === "credentials" ? t("catCredential") : c === "documents" ? t("catDocument") : c;
+}
 
 function viewEntries() {
-  setView(appShell("entries", h("div", { class: "loading" }, "Loading entries…")));
+  setView(appShell("entries", h("div", { class: "loading" }, t("loadingEntries"))));
   loadEntries();
 }
 
@@ -236,24 +630,24 @@ async function loadEntries() {
 function renderEntriesList(entries) {
   const list = entries.length === 0
     ? h("div", { class: "empty-state" },
-      h("p", null, "Nothing in the vault yet. What you add here is what your recipients receive."),
+      h("p", null, t("emptyVault")),
       h("div", null,
-        h("button", { class: "btn", type: "button", onclick: () => renderEntryEditor("notes", null) }, "Write a note"),
+        h("button", { class: "btn", type: "button", onclick: () => renderEntryEditor("notes", null) }, t("writeNote")),
         " ",
-        h("button", { class: "btn btn-ghost", type: "button", onclick: () => renderEntryEditor("credentials", null) }, "Add a credential")))
+        h("button", { class: "btn btn-ghost", type: "button", onclick: () => renderEntryEditor("credentials", null) }, t("addCredentialLong"))))
     : h("div", { class: "entry-list" },
       entries.map((e) => h("button", { class: "entry-row", type: "button", onclick: () => openEntry(e.id) },
-        h("span", { class: "entry-cat" }, CAT_LABEL[e.category] || e.category),
+        h("span", { class: "entry-cat" }, catLabel(e.category)),
         h("span", { class: "entry-title" }, e.title || e.name),
         h("span", { class: "entry-date" }, (e.updatedAt || "").slice(0, 10)))));
 
   setView(appShell("entries",
     h("div", { class: "card" },
       h("div", { class: "list-head" },
-        h("h1", null, "Entries"),
+        h("h1", null, t("entriesTitle")),
         h("div", { class: "btn-row-inline" },
-          h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => renderEntryEditor("notes", null) }, "+ Note"),
-          h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => renderEntryEditor("credentials", null) }, "+ Credential"))),
+          h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => renderEntryEditor("notes", null) }, t("addNote")),
+          h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => renderEntryEditor("credentials", null) }, t("addCredential")))),
       list)));
 }
 
@@ -271,11 +665,11 @@ function renderEntryDetail(e) {
   } else if (e.category === "credentials") {
     const c = e.credential || {};
     bodyNode = h("div", { class: "cred-fields" },
-      credRow("Service", c.service), credRow("URL", c.url),
-      credRow("Username", c.username), credRow("Password", c.password, true),
-      credRow("Notes", c.notes));
+      credRow(t("fService"), c.service), credRow(t("fURL"), c.url),
+      credRow(t("fUsername"), c.username), credRow(t("fPassword"), c.password, true),
+      credRow(t("fNotes"), c.notes));
   } else {
-    bodyNode = h("p", { class: "muted" }, "Binary document (" + (e.size || 0) + " bytes). Manage documents with the CLI.");
+    bodyNode = h("p", { class: "muted" }, fmt(t("binaryDoc"), e.size || 0));
   }
 
   const canEdit = e.category === "notes" || e.category === "credentials";
@@ -283,13 +677,13 @@ function renderEntryDetail(e) {
     h("div", { class: "card" },
       h("div", { class: "list-head" },
         h("h1", null, e.title || e.name),
-        h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => loadEntries() }, "← Back")),
-      h("div", { class: "muted" }, CAT_LABEL[e.category] || e.category),
+        h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => loadEntries() }, t("back"))),
+      h("div", { class: "muted" }, catLabel(e.category)),
       bodyNode,
       h("div", { class: "btn-row" },
-        canEdit ? h("button", { class: "btn", type: "button", onclick: () => renderEntryEditor(e.category, e) }, "Edit") : null,
+        canEdit ? h("button", { class: "btn", type: "button", onclick: () => renderEntryEditor(e.category, e) }, t("edit")) : null,
         h("span", { class: "spacer" }),
-        h("button", { class: "btn btn-danger", type: "button", onclick: () => deleteEntry(e) }, "Delete")))));
+        h("button", { class: "btn btn-danger", type: "button", onclick: () => deleteEntry(e) }, t("del"))))));
 }
 
 function credRow(label, value, secret) {
@@ -298,8 +692,8 @@ function credRow(label, value, secret) {
   return h("div", { class: "cred-row" },
     h("span", { class: "cred-k" }, label),
     val,
-    h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: (ev) => copy(value, ev.target) }, "Copy"),
-    secret ? h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: (ev) => { val.classList.toggle("secret-mask"); ev.target.textContent = val.classList.contains("secret-mask") ? "Show" : "Hide"; } }, "Show") : null);
+    h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: (ev) => copy(value, ev.target) }, t("copyBtn")),
+    secret ? h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: (ev) => { val.classList.toggle("secret-mask"); ev.target.textContent = val.classList.contains("secret-mask") ? t("show") : t("hide"); } }, t("show")) : null);
 }
 
 function renderEntryEditor(category, entry) {
@@ -309,31 +703,37 @@ function renderEntryEditor(category, entry) {
   let form;
 
   if (category === "notes") {
-    const title = h("input", { type: "text", id: "ntitle", value: entry ? (entry.title || "") : "", placeholder: "Note title" });
-    const content = h("textarea", { id: "ncontent", placeholder: "Write your note (Markdown supported)" });
+    const title = h("input", { type: "text", id: "ntitle", value: entry ? (entry.title || "") : "", placeholder: t("notePh") });
+    const content = h("textarea", { id: "ncontent", placeholder: t("noteContentPh") });
     content.value = entry ? (entry.content || "") : "";
-    fields.get = () => ({ category: "notes", title: title.value, content: content.value });
-    form = [h("label", null, "Title"), title, h("label", null, "Content"), content];
+    fields.get = () => {
+      if (isNew && !title.value.trim()) throw new Error(t("errTitleRequired"));
+      return { category: "notes", title: title.value, content: content.value };
+    };
+    form = [h("label", null, t("noteTitle")), title, h("label", null, t("noteContent")), content];
     if (!isNew) title.disabled = true; // title is fixed after creation (filename-derived)
   } else {
     const c = (entry && entry.credential) || {};
     const mk = (id, ph, val, type) => (fields[id] = h("input", { id, type: type || "text", placeholder: ph, value: val || "" }));
     form = [
-      h("label", null, "Service"), mk("service", "e.g. Bank", c.service),
-      h("label", null, "URL"), mk("url", "https://…", c.url),
-      h("label", null, "Username"), mk("username", "user@example.com", c.username),
-      h("label", null, "Password"), mk("password", "", c.password, "text"),
-      h("label", null, "Notes"), (fields.notes = h("textarea", { id: "cnotes", placeholder: "(optional)" })),
+      h("label", null, t("fService")), mk("service", t("credServicePh"), c.service),
+      h("label", null, t("fURL")), mk("url", "https://…", c.url),
+      h("label", null, t("fUsername")), mk("username", "user@example.com", c.username),
+      h("label", null, t("fPassword")), mk("password", "", c.password, "text"),
+      h("label", null, t("fNotes")), (fields.notes = h("textarea", { id: "cnotes", placeholder: t("credNotesPh") })),
     ];
     fields.notes.value = c.notes || "";
     if (!isNew) fields.service.disabled = true;
-    fields.get = () => ({
-      category: "credentials",
-      credential: { service: fields.service.value, url: fields.url.value, username: fields.username.value, password: fields.password.value, notes: fields.notes.value }
-    });
+    fields.get = () => {
+      if (isNew && !fields.service.value.trim()) throw new Error(t("errServiceRequired"));
+      return {
+        category: "credentials",
+        credential: { service: fields.service.value, url: fields.url.value, username: fields.username.value, password: fields.password.value, notes: fields.notes.value }
+      };
+    };
   }
 
-  const btn = h("button", { class: "btn", type: "submit" }, isNew ? "Create" : "Save");
+  const btn = h("button", { class: "btn", type: "submit" }, isNew ? t("create") : t("save"));
   const el = h("form", {
     onsubmit: async (e) => {
       e.preventDefault(); err.textContent = ""; btn.disabled = true;
@@ -341,14 +741,14 @@ function renderEntryEditor(category, entry) {
         const body = fields.get();
         if (isNew) await api("/api/entries", { method: "POST", body });
         else await api("/api/entries/" + encodeURIComponent(entry.id), { method: "PUT", body });
-        toast(isNew ? "Entry created." : "Entry saved.");
+        toast(isNew ? t("toastCreated") : t("toastSaved"));
         loadEntries();
       } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
     }
   },
     h("div", { class: "list-head" },
-      h("h1", null, (isNew ? "New " : "Edit ") + (CAT_LABEL[category] || category).toLowerCase()),
-      h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => loadEntries() }, "← Cancel")),
+      h("h1", null, category === "notes" ? (isNew ? t("newNote") : t("editNote")) : (isNew ? t("newCred") : t("editCred"))),
+      h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => loadEntries() }, t("cancel"))),
     ...form, err,
     h("div", { class: "btn-row" }, btn));
 
@@ -356,44 +756,16 @@ function renderEntryEditor(category, entry) {
 }
 
 async function deleteEntry(e) {
-  if (!confirm('Delete "' + (e.title || e.name) + '"? This cannot be undone.')) return;
+  if (!confirm(fmt(t("delConfirm"), e.title || e.name))) return;
   try {
     await api("/api/entries/" + encodeURIComponent(e.id), { method: "DELETE" });
-    toast("Entry deleted.");
+    toast(t("toastDeleted"));
     loadEntries();
   } catch (ex) { toast(ex.message, true); }
 }
 
-async function doCheckin(e) {
-  const btn = e.target; btn.disabled = true;
-  try {
-    const r = await api("/api/checkin", { method: "POST" });
-    if (r.pushed) {
-      toast("Checked in — timer reset, cloud updated.");
-    } else if (r.cloudError) {
-      toast("Checked in locally, but the cloud switch was NOT updated: " + r.cloudError, true);
-    } else {
-      toast("Checked in — timer reset.");
-    }
-    await refresh();
-  } catch (ex) {
-    toast(ex.message, true); btn.disabled = false;
-  }
-}
-
-async function doVerify(e) {
-  const btn = e.target; btn.disabled = true;
-  try {
-    const r = await api("/api/switch/verify", { method: "POST" });
-    toast(r.ok ? "Switch verified — armed and current." : "Switch needs attention — run 'kawarimi switch verify' for details.", !r.ok);
-  } catch (ex) {
-    toast(ex.message, true);
-  } finally { btn.disabled = false; }
-}
-
 // ---- setup wizard -------------------------------------------------------------
 
-const WIZ_STEPS = ["Create vault", "Save secrets", "Dead man's switch", "Cloud (GitHub)", "Package", "Done"];
 let wiz = { step: 0, secrets: null };
 
 function viewWizard() {
@@ -404,7 +776,7 @@ function viewWizard() {
 
 function wizProgress() {
   return h("div", { class: "wizard-steps" },
-    WIZ_STEPS.map((label, i) =>
+    t("wizSteps").map((label, i) =>
       h("div", { class: "wstep" + (i === wiz.step ? " active" : "") + (i < wiz.step ? " done" : "") },
         h("span", { class: "wstep-num" }, i < wiz.step ? "✓" : String(i + 1)),
         h("span", { class: "wstep-label" }, label))));
@@ -415,17 +787,17 @@ function wizGoto(step) { wiz.step = step; viewWizard(); }
 // Step 1: create the vault.
 function wizCreate() {
   const err = h("div", { class: "error" });
-  const pw = h("input", { type: "password", id: "wpw", placeholder: "Choose a strong password" });
-  const pw2 = h("input", { type: "password", id: "wpw2", placeholder: "Repeat password" });
-  const dir = h("input", { type: "text", id: "wdir", placeholder: "(default) ~/kawarimi-vault" });
-  const btn = h("button", { class: "btn", type: "submit" }, "Create vault");
+  const pw = h("input", { type: "password", id: "wpw", placeholder: t("wPwPh") });
+  const pw2 = h("input", { type: "password", id: "wpw2", placeholder: t("wPw2Ph") });
+  const dir = h("input", { type: "text", id: "wdir", placeholder: t("wFolderPh") });
+  const btn = h("button", { class: "btn", type: "submit" }, t("wCreateBtn"));
 
   const form = h("form", {
     onsubmit: async (e) => {
       e.preventDefault();
       err.textContent = "";
-      if (pw.value.length < 8) { err.textContent = "Use at least 8 characters."; return; }
-      if (pw.value !== pw2.value) { err.textContent = "Passwords do not match."; return; }
+      if (pw.value.length < 8) { err.textContent = t("errPwShort"); return; }
+      if (pw.value !== pw2.value) { err.textContent = t("errPwMismatch"); return; }
       btn.disabled = true;
       try {
         wiz.secrets = await api("/api/init", { method: "POST", body: { password: pw.value, vaultDir: dir.value.trim() } });
@@ -433,11 +805,11 @@ function wizCreate() {
       } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
     }
   },
-    h("h1", null, "Create your vault"),
-    h("p", { class: "sub" }, "This password unlocks the vault for daily use on this device."),
-    h("label", null, "Password"), pw,
-    h("label", null, "Confirm password"), pw2,
-    h("label", null, "Vault folder ", h("span", { class: "hint" }, "(optional)")), dir,
+    h("h1", null, t("wCreateTitle")),
+    h("p", { class: "sub" }, t("wCreateSub")),
+    h("label", null, t("password")), pw,
+    h("label", null, t("wConfirmPw")), pw2,
+    h("label", null, t("wFolder"), " ", h("span", { class: "hint" }, t("wOptional"))), dir,
     err,
     h("div", { class: "btn-row" }, btn)
   );
@@ -448,26 +820,25 @@ function wizCreate() {
 function wizSecrets() {
   const s = wiz.secrets;
   const saved = h("input", { type: "checkbox", id: "savedChk" });
-  const cont = h("button", { class: "btn", type: "button", disabled: "true" },
-    "Continue to the dead man's switch");
+  const cont = h("button", { class: "btn", type: "button", disabled: "true" }, t("wSecretsNext"));
   saved.addEventListener("change", () => { cont.disabled = !saved.checked; });
   cont.addEventListener("click", () => wizGoto(2));
 
   return h("div", { class: "card" },
-    h("h1", null, "Write these down now"),
-    h("p", { class: "sub" }, "These are shown only once. Store them safely and do not reload this page until you have saved them."),
-    secretBlock("Mnemonic words", "Your personal backup — store in a safe.",
+    h("h1", null, t("wSecretsTitle")),
+    h("p", { class: "sub" }, t("wSecretsSub")),
+    secretBlock(t("wMnemonic"), t("wMnemonicSub"),
       h("div", { class: "word-grid" },
         s.mnemonic.map((wd, i) => h("div", { class: "word" }, h("span", { class: "word-i" }, String(i + 1)), wd))),
       s.mnemonic.join(" ")),
-    secretBlock("Recovery code", "Regain access if you lose this device.",
+    secretBlock(t("wRecovery"), t("wRecoverySub"),
       h("div", { class: "secret-val mono" }, s.recoveryCode), s.recoveryCode),
-    secretBlock("Recipient passphrase", "Print this on a card and give it to your recipients.",
+    secretBlock(t("wCard"), t("wCardSub"),
       h("div", { class: "secret-val mono" }, s.recipientPassphrase), s.recipientPassphrase),
     h("div", { class: "btn-row" },
-      h("button", { class: "btn btn-ghost", type: "button", onclick: () => window.print() }, "Print"),
+      h("button", { class: "btn btn-ghost", type: "button", onclick: () => window.print() }, t("print")),
       h("span", { class: "spacer" }),
-      h("label", { class: "inline-check" }, saved, " I have saved these securely")),
+      h("label", { class: "inline-check" }, saved, " " + t("savedCheck"))),
     h("div", { class: "btn-row" }, cont)
   );
 }
@@ -476,14 +847,14 @@ function secretBlock(title, sub, valNode, copyText) {
   return h("div", { class: "secret-box" },
     h("div", { class: "secret-head" },
       h("div", null, h("div", { class: "secret-title" }, title), h("div", { class: "muted" }, sub)),
-      h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: (e) => copy(copyText, e.target) }, "Copy")),
+      h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: (e) => copy(copyText, e.target) }, t("copyBtn"))),
     valNode);
 }
 
 function copy(text, btn) {
   navigator.clipboard.writeText(text).then(() => {
-    const old = btn.textContent; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = old; }, 1200);
-  }).catch(() => toast("Copy failed — select and copy manually.", true));
+    const old = btn.textContent; btn.textContent = t("copied"); setTimeout(() => { btn.textContent = old; }, 1200);
+  }).catch(() => toast(t("copyFail"), true));
 }
 
 // Step 3: dead man's switch settings.
@@ -491,20 +862,21 @@ function wizSwitch() {
   const err = h("div", { class: "error" });
   const f = {};
   const inp = (id, attrs) => (f[id] = h("input", Object.assign({ id }, attrs)));
-  const btn = h("button", { class: "btn", type: "submit" }, "Save & continue");
+  const btn = h("button", { class: "btn", type: "submit" }, t("wSaveNext"));
 
   const form = h("form", {
     onsubmit: async (e) => {
       e.preventDefault();
       err.textContent = "";
+      const w1 = parseInt(f.w1.value) || 0, w2 = parseInt(f.w2.value) || 0, fin = parseInt(f.final.value) || 0;
+      if (!(w1 > 0 && w1 < w2 && w2 < fin)) { err.textContent = t("errThresholds"); return; }
       btn.disabled = true;
       const body = {
         smtpServer: f.smtpServer.value, smtpPort: parseInt(f.smtpPort.value) || 587,
         smtpUsername: f.smtpUsername.value, smtpPassword: f.smtpPassword.value,
         senderEmail: f.senderEmail.value, userEmail: f.userEmail.value,
         recipients: f.recipients.value.split(/[,\n]/).map((x) => x.trim()).filter(Boolean),
-        warning1Days: parseInt(f.w1.value) || 0, warning2Days: parseInt(f.w2.value) || 0,
-        finalDays: parseInt(f.final.value) || 0,
+        warning1Days: w1, warning2Days: w2, finalDays: fin,
         vaultPackageLocation: f.pkgLoc.value,
         telegramBotToken: f.tgToken.value, telegramChatId: f.tgChat.value,
         imapServer: f.imapServer.value, imapPort: parseInt(f.imapPort.value) || 0,
@@ -516,76 +888,80 @@ function wizSwitch() {
       } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
     }
   },
-    h("h2", null, "Email (SMTP)"),
-    h("p", { class: "muted" }, "Used to warn you and to notify recipients when the switch fires."),
+    h("h2", null, t("wSmtpH")),
+    h("p", { class: "muted" }, t("wSmtpSub")),
+    help(t("wSmtpHelp")),
     h("div", { class: "row" },
-      field("SMTP server", inp("smtpServer", { type: "text", placeholder: "smtp.gmail.com" })),
-      field("Port", inp("smtpPort", { type: "number", value: "587" }))),
+      field(t("wSmtpServer"), inp("smtpServer", { type: "text", placeholder: "smtp.gmail.com" })),
+      field(t("wSmtpPort"), inp("smtpPort", { type: "number", value: "587" }))),
     h("div", { class: "row" },
-      field("SMTP username", inp("smtpUsername", { type: "text", placeholder: "you@gmail.com" })),
-      field("SMTP password", inp("smtpPassword", { type: "password", placeholder: "app password" }))),
-    field("Sender email (optional)", inp("senderEmail", { type: "text", placeholder: "defaults to username" })),
+      field(t("wSmtpUser"), inp("smtpUsername", { type: "text", placeholder: "you@gmail.com" })),
+      field(t("wSmtpPass"), inp("smtpPassword", { type: "password", placeholder: t("wSmtpPassPh") }))),
+    fieldNode(t("wSender"), t("wSenderHint"), inp("senderEmail", { type: "text" })),
 
-    h("h2", null, "Recipients & timing"),
-    field("Your email (for warnings)", inp("userEmail", { type: "email", placeholder: "you@example.com" })),
-    fieldNode("Recipient emails", "one per line or comma-separated",
+    h("h2", null, t("wRecipH")),
+    field(t("wYourEmail"), inp("userEmail", { type: "email", placeholder: "you@example.com" })),
+    fieldNode(t("wRecipients"), t("wRecipientsHint"),
       (f.recipients = h("textarea", { id: "recipients", placeholder: "family@example.com" }))),
+    help(fmt(t("wTimingHelp"), 14, 21, 30)),
     h("div", { class: "row" },
-      field("Warning 1 (days)", inp("w1", { type: "number", value: "14" })),
-      field("Warning 2 (days)", inp("w2", { type: "number", value: "21" })),
-      field("Final release (days)", inp("final", { type: "number", value: "30" }))),
-    field("Vault package location", inp("pkgLoc", { type: "text", placeholder: "Drive/GitHub link where recipients download the package" })),
+      field(t("wW1"), inp("w1", { type: "number", value: "14" })),
+      field(t("wW2"), inp("w2", { type: "number", value: "21" })),
+      field(t("wFinal"), inp("final", { type: "number", value: "30" }))),
+    field(t("wPkgLoc"), inp("pkgLoc", { type: "text", placeholder: t("wPkgLocPh") })),
+    help(t("wPkgLocHelp")),
 
-    h("h2", null, "Optional channels"),
+    h("h2", null, t("wOptH")),
     h("div", { class: "row" },
-      field("Telegram bot token", inp("tgToken", { type: "text", placeholder: "(optional)" })),
-      field("Telegram chat ID", inp("tgChat", { type: "text", placeholder: "(optional)" }))),
+      field(t("wTgToken"), inp("tgToken", { type: "text", placeholder: t("wOptional") })),
+      field(t("wTgChat"), inp("tgChat", { type: "text", placeholder: t("wOptional") }))),
     h("div", { class: "row" },
-      field("IMAP server", inp("imapServer", { type: "text", placeholder: "(optional) reply-to-checkin" })),
-      field("IMAP port", inp("imapPort", { type: "number", placeholder: "993" }))),
+      field(t("wImapServer"), inp("imapServer", { type: "text", placeholder: t("wImapPh") })),
+      field(t("wImapPort"), inp("imapPort", { type: "number", placeholder: "993" }))),
 
-    h("h2", null, "Final release mode"),
+    h("h2", null, t("wModeH")),
     h("label", { class: "inline-check" },
       h("input", { type: "radio", name: "release", value: "cloud", checked: "true" }),
-      " Cloud only ", h("span", { class: "hint" }, "(recommended — this machine holds no key)")),
+      " " + t("wModeCloud") + " ", h("span", { class: "hint" }, t("wModeCloudHint"))),
     h("label", { class: "inline-check" },
       h("input", { type: "radio", name: "release", value: "local" }),
-      " Also allow release from this machine"),
+      " " + t("wModeLocal")),
     err,
     h("div", { class: "btn-row" },
-      h("button", { class: "btn btn-ghost", type: "button", onclick: () => wizResume ? exitWizardToDashboard() : wizGoto(1) }, wizResume ? "Cancel" : "Back"),
+      h("button", { class: "btn btn-ghost", type: "button", onclick: () => wizResume ? exitWizardToDashboard() : wizGoto(1) }, wizResume ? t("cancel") : t("backBtn")),
       h("span", { class: "spacer" }), btn)
   );
-  return h("div", { class: "card" }, h("h1", null, "Dead man's switch"), form);
+  return h("div", { class: "card" }, h("h1", null, t("wSwitchTitle")), form);
 }
 
 // Step 4: GitHub cloud automation.
 function wizCloud() {
   const err = h("div", { class: "error" });
-  const tok = h("input", { type: "password", id: "ghtok", placeholder: "ghp_… (needs 'repo' scope)" });
+  const tok = h("input", { type: "password", id: "ghtok", placeholder: "ghp_…" });
   const repo = h("input", { type: "text", id: "ghrepo", value: "kawarimi-dms" });
-  const btn = h("button", { class: "btn", type: "submit" }, "Create repo & arm the switch");
+  const btn = h("button", { class: "btn", type: "submit" }, t("wCloudBtn"));
 
   const form = h("form", {
     onsubmit: async (e) => {
       e.preventDefault();
       err.textContent = "";
-      btn.disabled = true; btn.textContent = "Working… (this can take a few seconds)";
+      btn.disabled = true; btn.textContent = t("wCloudWorking");
       try {
         const r = await api("/api/switch/cloud", { method: "POST", body: { githubToken: tok.value, repoName: repo.value.trim() } });
         wiz.cloud = r;
         wizGoto(4);
-      } catch (ex) { err.textContent = ex.message; btn.disabled = false; btn.textContent = "Create repo & arm the switch"; }
+      } catch (ex) { err.textContent = ex.message; btn.disabled = false; btn.textContent = t("wCloudBtn"); }
     }
   },
-    h("h1", null, "Arm the cloud switch"),
-    h("p", { class: "sub" }, "kawarimi will create a private GitHub repo, set its Actions secrets, and push the workflow that emails your recipients if you stop checking in."),
-    h("p", { class: "muted" }, "Create a token at github.com → Settings → Developer settings → Personal access tokens, with the 'repo' scope. Your SSH key must also be registered with GitHub (used to push heartbeats)."),
-    h("label", null, "GitHub personal access token"), tok,
-    h("label", null, "New private repo name"), repo,
+    h("h1", null, t("wCloudTitle")),
+    h("p", { class: "sub" }, t("wCloudSub")),
+    help(t("wCloudHelp")),
+    h("p", null, h("a", { class: "help-link", href: "https://github.com/settings/tokens/new?scopes=repo&description=kawarimi-dms", target: "_blank", rel: "noreferrer" }, t("wCloudTokenLink"))),
+    h("label", null, t("wGhToken")), tok,
+    h("label", null, t("wGhRepo")), repo,
     err,
     h("div", { class: "btn-row" },
-      h("button", { class: "btn btn-ghost", type: "button", onclick: () => wizGoto(2) }, "Back"),
+      h("button", { class: "btn btn-ghost", type: "button", onclick: () => wizGoto(2) }, t("backBtn")),
       h("span", { class: "spacer" }), btn)
   );
   return h("div", { class: "card card-narrow" }, form);
@@ -594,40 +970,40 @@ function wizCloud() {
 // Step 5: build the recipient package.
 function wizPackage() {
   const err = h("div", { class: "error" });
-  const out = h("input", { type: "text", id: "pkgout", placeholder: "(default) ~/kawarimi-vault.zip" });
+  const out = h("input", { type: "text", id: "pkgout", placeholder: t("wPkgOutPh") });
   const result = h("div", { class: "muted" });
-  const btn = h("button", { class: "btn", type: "submit" }, "Build package");
+  const btn = h("button", { class: "btn", type: "submit" }, t("wPkgBuild"));
 
   const form = h("form", {
     onsubmit: async (e) => {
       e.preventDefault();
       err.textContent = ""; result.textContent = "";
-      btn.disabled = true; btn.textContent = "Building…";
+      btn.disabled = true; btn.textContent = t("wPkgBuilding");
       const mode = document.querySelector('input[name="pkgmode"]:checked').value;
       try {
         const r = await api("/api/package/build", { method: "POST", body: { mode, output: out.value.trim() } });
         result.innerHTML = "";
-        result.appendChild(h("div", { class: "ok-line" }, "✓ Built " + r.path + " (" + r.sizeMB + " MB)"));
-        btn.textContent = "Rebuild";
+        result.appendChild(h("div", { class: "ok-line" }, fmt(t("wPkgBuilt"), r.path, r.sizeMB)));
+        btn.textContent = t("wPkgRebuild");
         btn.disabled = false;
-      } catch (ex) { err.textContent = ex.message; btn.disabled = false; btn.textContent = "Build package"; }
+      } catch (ex) { err.textContent = ex.message; btn.disabled = false; btn.textContent = t("wPkgBuild"); }
     }
   },
-    h("h1", null, "Build the recipient package"),
-    h("p", { class: "sub" }, "A zip with the encrypted vault and instructions — no secrets. Upload it to the location you set above."),
+    h("h1", null, t("wPkgTitle")),
+    h("p", { class: "sub" }, t("wPkgSub")),
     h("label", { class: "inline-check" },
       h("input", { type: "radio", name: "pkgmode", value: "auto", checked: "true" }),
-      " Include recipient apps ", h("span", { class: "hint" }, "(cross-compiles from source)")),
+      " " + t("wPkgAuto") + " ", h("span", { class: "hint" }, t("wPkgAutoHint"))),
     h("label", { class: "inline-check" },
       h("input", { type: "radio", name: "pkgmode", value: "none" }),
-      " No apps ", h("span", { class: "hint" }, "(recipients install kawarimi themselves)")),
-    h("label", null, "Output file (optional)"), out,
+      " " + t("wPkgNone") + " ", h("span", { class: "hint" }, t("wPkgNoneHint"))),
+    h("label", null, t("wPkgOut"), " ", h("span", { class: "hint" }, t("wOptional"))), out,
     err, result,
     h("div", { class: "btn-row" },
-      h("button", { class: "btn btn-ghost", type: "button", onclick: () => wizGoto(3) }, "Back"),
+      h("button", { class: "btn btn-ghost", type: "button", onclick: () => wizGoto(3) }, t("backBtn")),
       h("span", { class: "spacer" }),
       btn,
-      h("button", { class: "btn", type: "button", onclick: () => wizGoto(5) }, "Finish")))
+      h("button", { class: "btn", type: "button", onclick: () => wizGoto(5) }, t("finish"))))
   ;
   return h("div", { class: "card" }, form);
 }
@@ -635,10 +1011,10 @@ function wizPackage() {
 // Step 6: done.
 function wizDone() {
   return h("div", { class: "card card-narrow" },
-    h("h1", null, "You're all set"),
-    h("p", { class: "sub" }, "Your vault is created and the cloud dead man's switch is armed. Add entries and check in from the dashboard. Remember to hand the recipient card to your recipients and upload the package to its location."),
+    h("h1", null, t("wDoneTitle")),
+    h("p", { class: "sub" }, t("wDoneSub")),
     h("div", { class: "btn-row" },
-      h("button", { class: "btn", type: "button", onclick: exitWizardToDashboard }, "Go to dashboard"))
+      h("button", { class: "btn", type: "button", onclick: exitWizardToDashboard }, t("goDashboard")))
   );
 }
 
@@ -664,7 +1040,7 @@ function applyTheme(mode) {
   const btn = document.getElementById("themeBtn");
   if (btn) {
     btn.textContent = THEME_GLYPH[mode] || THEME_GLYPH.auto;
-    btn.title = "Theme: " + mode + " (click to change)";
+    btn.title = t("themeTitle") + ": " + mode;
   }
 }
 
@@ -692,19 +1068,23 @@ function startKeepalive() {
 }
 
 document.getElementById("quitBtn").addEventListener("click", async () => {
-  if (!confirm("Stop the kawarimi console? You can restart it with 'kawarimi gui'.")) return;
+  if (!confirm(t("quitConfirm"))) return;
   try { await api("/api/quit", { method: "POST" }); } catch (_) {}
   document.body.innerHTML =
-    '<div style="padding:60px;text-align:center;color:#888">kawarimi console stopped. You can close this tab.</div>';
+    '<div style="padding:60px;text-align:center;color:#888">' + t("quitDone") + "</div>";
 });
 
 (async function main() {
+  // A #lang=es|en hash pins the language for this load (screenshots, links).
+  const lm = (location.hash.match(/lang=(es|en)/) || [])[1];
+  if (lm) lang = lm;
   initTheme();
+  initLang();
   if (location.hash.includes("entries")) nav = "entries"; // deep-link the Entries tab
   startKeepalive();
   try {
     await refresh();
   } catch (ex) {
-    setView(h("div", { class: "card" }, h("h1", null, "Cannot reach the console"), h("p", { class: "error" }, ex.message)));
+    setView(h("div", { class: "card" }, h("h1", null, t("cannotReach")), h("p", { class: "error" }, ex.message)));
   }
 })();

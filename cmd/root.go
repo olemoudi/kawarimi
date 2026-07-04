@@ -8,6 +8,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/crypto"
+	"github.com/olemoudi/kawarimi/internal/gui"
 	"github.com/olemoudi/kawarimi/internal/recipient"
 	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
@@ -22,15 +23,24 @@ var rootCmd = &cobra.Command{
 	Short:   "Encrypted end-of-life information vault",
 	Long:    "Kawarimi manages an encrypted vault of instructions, credentials, and documents for your family.",
 	Version: version,
-	// With no subcommand, launch the recipient wizard when this looks like a
+	// With no subcommand: launch the recipient wizard when this looks like a
 	// recipient's machine (a package is nearby, no owner device key, interactive);
-	// otherwise print help as before. This is what makes double-clicking the
-	// binary inside an extracted package "just work".
+	// launch the browser setup wizard on a fresh interactive machine (nothing
+	// configured at all — the double-clicked-download case); otherwise print help.
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if recipientContext() {
 			cmd.SilenceUsage = true  // the wizard prints its own guidance
 			cmd.SilenceErrors = true // (only affects this root invocation)
 			return recipient.Run(recipient.Options{})
+		}
+		if ownerFirstRunContext() {
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			fmt.Println("No vault here yet — starting the setup wizard in your browser…")
+			fmt.Println("Aún no hay caja fuerte — abriendo el asistente en tu navegador…")
+			fmt.Println("(kawarimi --help)")
+			fmt.Println()
+			return gui.Run(gui.Options{Version: version})
 		}
 		return cmd.Help()
 	},
@@ -47,6 +57,37 @@ func recipientContext() bool {
 	if ownerDeviceKeyExists() {
 		return false
 	}
+	cwd, _ := os.Getwd()
+	exeDir := ""
+	if exe, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exe)
+	}
+	return hasNearbySealedPayload(cwd, exeDir)
+}
+
+// ownerFirstRunContext reports whether bare `kawarimi` should launch the browser
+// setup wizard: an interactive session on a machine with NOTHING configured — no
+// config, no device key, and no recipient package nearby. This is the person who
+// just downloaded the binary and double-clicked it; configured machines, scripts,
+// and recipients are unaffected (recipientContext is checked first).
+func ownerFirstRunContext() bool {
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		return false
+	}
+	return firstRunDecision(configExists(), ownerDeviceKeyExists(), nearbyPayloadExists())
+}
+
+// firstRunDecision is the pure decision, split out for testing.
+func firstRunDecision(hasConfig, hasDeviceKey, hasNearbyPayload bool) bool {
+	return !hasConfig && !hasDeviceKey && !hasNearbyPayload
+}
+
+func configExists() bool {
+	_, err := config.Load()
+	return err == nil
+}
+
+func nearbyPayloadExists() bool {
 	cwd, _ := os.Getwd()
 	exeDir := ""
 	if exe, err := os.Executable(); err == nil {

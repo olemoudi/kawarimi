@@ -364,6 +364,15 @@ pure-Go and CGo-free — the SPA (`internal/gui/web/*`) is compiled in with
 `//go:embed`, so the single-binary, cross-compile-from-one-machine model is
 unchanged.
 
+The console is **bilingual (Spanish/English)**: the language auto-detects from the
+browser, a topbar toggle persists an override, and every wizard step carries
+plain-language inline help (Gmail app-password guidance, a prefilled GitHub-token
+link, package-location examples). A bare `kawarimi` invocation on a completely
+fresh interactive machine — no config, no device key, no recipient package nearby
+— auto-launches this wizard (`ownerFirstRunContext`, [`cmd/root.go`](cmd/root.go)),
+which is what makes a double-clicked download "just work"; recipient detection
+takes precedence and configured machines still get `--help`.
+
 **One shared code path.** The GUI does *not* re-implement setup. It calls the same
 `internal/setup` orchestration the CLI uses (`InitVault`, `StoreSwitchPayloadForMode`,
 `SeedSwitch`) plus `internal/vault`, `internal/deadswitch`, and `internal/github`.
@@ -429,6 +438,14 @@ see [`internal/vault/migrate.go`](internal/vault/migrate.go).
 - **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): on push to
   `main` and all PRs — gofmt check, `go vet`, `go build`, `go test -short` on
   Go 1.25. Actions **pinned to commit SHAs**, `permissions: contents: read`.
+  A main-only `coverage` job runs the full suite with a coverprofile, renders a
+  self-contained badge SVG, and force-pushes it to the `badges` branch (no
+  external coverage service); the READMEs embed it from raw.githubusercontent.
+- **Releases** ([`.github/workflows/release.yml`](.github/workflows/release.yml)):
+  pushing a `v*` tag runs goreleaser and publishes a **draft** GitHub release
+  with the five per-platform binaries + `checksums.txt` (raw binaries, so the
+  assets double as `package build --binaries` input); the owner reviews the
+  draft and clicks Publish.
 - **Release** ([`.goreleaser.yml`](.goreleaser.yml)): goreleaser v2,
   `CGO_ENABLED=0`, linux/darwin/windows × amd64/arm64, binaries named
   `kawarimi-{{.Os}}-{{.Arch}}` so `dist/` feeds straight into

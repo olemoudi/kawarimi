@@ -203,6 +203,13 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .btn-row .spacer { flex: 1; }
 
 .error { color: var(--alarm); font-size: 13px; margin-top: 10px; min-height: 18px; }
+.help {
+  font-size: 13px; color: var(--muted); margin: 4px 0 14px;
+  padding: 10px 13px; background: var(--panel-2);
+  border-left: 2px solid var(--brass); border-radius: 0 6px 6px 0;
+  max-width: 62ch;
+}
+.help a, .help-link { color: var(--brass); text-decoration: underline; text-underline-offset: 2px; }
 .muted { color: var(--muted); }
 .mono { font-family: var(--mono); }
 .ok-line { color: var(--alive); font-weight: 600; font-family: var(--mono); font-size: 13px; }
