@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/crypto"
@@ -64,18 +63,14 @@ func exportWithSealedPayload() (*vault.Vault, error) {
 		return nil, err
 	}
 
-	// V4 mode: the sealed payload is in the vault directory.
+	// V4: the sealed payload ships inside the vault directory. (Pre-V4 packages,
+	// which emailed the sealed payload instead, were never publicly released and
+	// are no longer supported.)
 	sealedPayloadPath := filepath.Join(vaultDir, vault.SealedPayloadFile)
-	if _, err := os.Stat(sealedPayloadPath); err == nil {
-		return exportWithDMSKey(vaultDir)
+	if _, err := os.Stat(sealedPayloadPath); err != nil {
+		return nil, fmt.Errorf("no sealed payload in %s — this looks like an old or incomplete package; download the newest package and try again", vaultDir)
 	}
-
-	// V3 legacy: prompt for the sealed payload from email; needs the header.
-	header, err := vault.LoadHeader(vaultDir)
-	if err != nil {
-		return nil, fmt.Errorf("loading vault header: %w", err)
-	}
-	return exportWithSealedPayloadLegacy(vaultDir, header)
+	return exportWithDMSKey(vaultDir)
 }
 
 // exportWithDMSKey handles the V4 flow: sealed payload in vault, DMS key from email.
@@ -107,53 +102,6 @@ func exportWithDMSKey(vaultDir string) (*vault.Vault, error) {
 	}
 	fmt.Fprintln(os.Stderr, "Vault unlocked successfully.")
 	return v, nil
-}
-
-// exportWithSealedPayloadLegacy handles V3: sealed payload from email + passphrase from card.
-func exportWithSealedPayloadLegacy(vaultDir string, header *vault.Header) (*vault.Vault, error) {
-	reader := bufio.NewReader(os.Stdin)
-
-	// Prompt for sealed payload
-	fmt.Fprintln(os.Stderr, "Paste the sealed payload from the email (base64 string):")
-	sealedBase64, err := reader.ReadString('\n')
-	if err != nil {
-		return nil, fmt.Errorf("reading sealed payload: %w", err)
-	}
-	sealedBase64 = strings.TrimSpace(sealedBase64)
-
-	ciphertext, err := crypto.DecodeSealedPayload(sealedBase64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid sealed payload: %w", err)
-	}
-
-	// Prompt for recipient passphrase (echo suppressed to prevent shoulder surfing)
-	passphrase, err := crypto.PromptPassphrase("Enter recipient passphrase (from physical card): ")
-	if err != nil {
-		return nil, fmt.Errorf("reading passphrase: %w", err)
-	}
-
-	// Unseal to recover mnemonic entropy
-	fmt.Fprintln(os.Stderr, "Decrypting sealed payload...")
-	entropy, err := crypto.UnsealMnemonic(ciphertext, passphrase)
-	if err != nil {
-		return nil, fmt.Errorf("decrypting sealed payload (wrong passphrase?): %w", err)
-	}
-	defer crypto.ZeroBytes(entropy)
-
-	// Convert entropy to mnemonic words
-	words, err := crypto.EncodeMnemonic(entropy)
-	if err != nil {
-		return nil, fmt.Errorf("encoding mnemonic: %w", err)
-	}
-
-	// Open vault with mnemonic
-	_, ageIdentity, err := header.OpenWithMnemonic(words)
-	if err != nil {
-		return nil, fmt.Errorf("unlocking vault: %w", err)
-	}
-
-	fmt.Fprintln(os.Stderr, "Vault unlocked successfully.")
-	return vault.OpenV2(vaultDir, ageIdentity, header.AgeRecipient)
 }
 
 func resolveVaultDir() (string, error) {

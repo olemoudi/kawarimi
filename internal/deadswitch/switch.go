@@ -330,161 +330,20 @@ func triggerFinalRelease(switchCfg *SwitchConfig, appDir string) error {
 	if strings.HasPrefix(payload, "DMSKEY:") {
 		return triggerFinalReleaseV4(switchCfg, payload)
 	}
-	if strings.HasPrefix(payload, "SEALED:") {
-		return triggerFinalReleaseV3(switchCfg, payload)
-	}
-	if strings.HasPrefix(payload, "MNEMONIC:") {
-		return triggerFinalReleaseV2(switchCfg, payload)
-	}
 
-	// V1: payload is a passphrase
-	return triggerFinalReleaseV1(switchCfg, payload)
-}
-
-func triggerFinalReleaseV1(switchCfg *SwitchConfig, passphrase string) error {
-	subject := "Important: Access Information Vault"
-	body := fmt.Sprintf(`This is an automated message from the Kawarimi information vault.
-
-The vault owner has not checked in for an extended period.
-
-To access the encrypted information:
-
-1. Locate the vault in one of these places:
-   - Git repository: %s
-   - USB drive (check with family for location)
-
-2. Install the 'age' decryption tool:
-   - Download from: https://github.com/FiloSottile/age/releases
-   - Or on Mac: brew install age
-
-3. Your decryption passphrase is:
-
-   %s
-
-4. Open a terminal and navigate to the vault directory.
-   Read DECRYPT_INSTRUCTIONS.md for detailed steps.
-
-5. Quick start:
-   age -d manifest.age > manifest.json
-   Then open manifest.json to see what's available.
-
-IMPORTANT: Store this passphrase securely. Do not share it
-beyond the intended recipients.
-`, switchCfg.VaultRepoURL, passphrase)
-
-	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
-}
-
-func triggerFinalReleaseV2(switchCfg *SwitchConfig, payload string) error {
-	mnemonicStr := strings.TrimPrefix(payload, "MNEMONIC:")
-	words := strings.Fields(mnemonicStr)
-
-	// Delivery instructions
-	deliverySection := "1. Locate the vault:\n"
-	if switchCfg.DeliveryInstructions != "" {
-		deliverySection += "   " + strings.ReplaceAll(switchCfg.DeliveryInstructions, "\n", "\n   ")
-	} else if switchCfg.VaultRepoURL != "" {
-		deliverySection += fmt.Sprintf("   Git repository: %s\n   Run: git clone %s", switchCfg.VaultRepoURL, switchCfg.VaultRepoURL)
-	} else {
-		deliverySection += "   Check with family for the vault location (USB drive, shared folder, etc.)"
-	}
-
-	// Mnemonic section
-	var mnemonicSection string
-	if switchCfg.MnemonicDelivery == "physical" {
-		location := switchCfg.PassphraseLocation
-		if location == "" {
-			location = "a sealed envelope/card provided by the vault owner"
-		}
-		mnemonicSection = fmt.Sprintf(`3. Find the 8 mnemonic words at:
-   %s
-   Enter the words when prompted.`, location)
-	} else {
-		var wordList string
-		for i, w := range words {
-			wordList += fmt.Sprintf("   %d. %s\n", i+1, w)
-		}
-		mnemonicSection = fmt.Sprintf(`3. When prompted, enter these 8 mnemonic words:
-
-%s
-   If you also have a physical card/envelope with mnemonic words,
-   use those instead (more secure).`, wordList)
-	}
-
-	subject := "Important: Access Information Vault"
-	body := fmt.Sprintf(`This is an automated message from the Kawarimi information vault.
-
-The vault owner has not checked in for an extended period.
-
-HOW TO ACCESS THE VAULT:
-
-%s
-
-2. In the vault directory, find the kawarimi program for your
-   computer (kawarimi-linux, kawarimi-macos, or kawarimi-windows.exe).
-
-   Open a terminal/command prompt and run:
-   ./kawarimi export --mnemonic ./decrypted/
-
-%s
-
-4. Your decrypted files will be in the ./decrypted/ directory.
-
-IMPORTANT: Store the mnemonic words securely. Do not share them
-beyond the intended recipients.
-`, deliverySection, mnemonicSection)
-
-	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
-}
-
-func triggerFinalReleaseV3(switchCfg *SwitchConfig, payload string) error {
-	sealedBase64 := strings.TrimPrefix(payload, "SEALED:")
-
-	// Vault package location
-	locationSection := "1. Download the vault package:\n"
-	if switchCfg.VaultPackageLocation != "" {
-		locationSection += "   " + strings.ReplaceAll(switchCfg.VaultPackageLocation, "\n", "\n   ")
-	} else if switchCfg.DeliveryInstructions != "" {
-		locationSection += "   " + strings.ReplaceAll(switchCfg.DeliveryInstructions, "\n", "\n   ")
-	} else if switchCfg.VaultRepoURL != "" {
-		locationSection += fmt.Sprintf("   Git repository: %s\n   Run: git clone %s", switchCfg.VaultRepoURL, switchCfg.VaultRepoURL)
-	} else {
-		locationSection += "   Check with family for the vault package location."
-	}
-
-	subject := "Important: Access Information Vault"
-	body := fmt.Sprintf(`This is an automated message from the Kawarimi information vault.
-
-The vault owner has not checked in for an extended period.
-
-HOW TO ACCESS THE VAULT:
-
-%s
-
-2. Extract the vault package (zip file).
-
-3. Find the kawarimi program for your computer:
-   - kawarimi-linux-amd64     (Linux)
-   - kawarimi-darwin-arm64    (Mac with Apple Silicon)
-   - kawarimi-windows-amd64.exe (Windows)
-
-4. Open a terminal/command prompt and run:
-   ./kawarimi export --sealed ./decrypted/
-
-5. When prompted, paste this sealed payload:
-
-%s
-
-6. When prompted, enter the RECIPIENT PASSPHRASE from the
-   physical card given to you by the vault owner.
-
-7. Your decrypted files will be in the ./decrypted/ directory.
-
-IMPORTANT: Keep the recipient passphrase card secure.
-Do not share it beyond the intended recipients.
-`, locationSection, sealedBase64)
-
-	return SendEmail(switchCfg, switchCfg.Recipients, subject, body)
+	// Pre-V4 payloads (SEALED:/MNEMONIC:/bare passphrase) emailed secrets that the
+	// V4 key-split deliberately never sends. No public release ever shipped them,
+	// so rather than keep untested release paths alive, fail loudly toward the
+	// OWNER: nothing is emailed to recipients, and the owner is told how to fix it.
+	err = fmt.Errorf("switch payload predates the V4 key-split — run 'kawarimi switch rekey' to re-arm; nothing was sent to recipients")
+	_ = SendEmail(switchCfg, []string{switchCfg.UserEmail},
+		"Kawarimi: dead man's switch could NOT release (outdated payload)",
+		"The switch reached its final stage but the stored payload predates the V4\n"+
+			"key-split, which this version no longer delivers.\n\n"+
+			"Nothing was sent to your recipients.\n\n"+
+			"If you are seeing this, run 'kawarimi checkin', then 'kawarimi switch rekey'\n"+
+			"to upgrade the switch payload.")
+	return err
 }
 
 // triggerFinalReleaseCloudOnly runs when this machine reaches the final stage but

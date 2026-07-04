@@ -408,16 +408,19 @@ mode the local `dms-key` is deleted once the GitHub secret is set.
 
 ## 12. Versioned evolution
 
-The code carries backward-compatible generations, dispatched by a payload prefix
-in `triggerFinalRelease` (`internal/deadswitch/switch.go`). The **current default
-is a v2 vault + V4 cloud-only key-split**; older paths remain only for
-back-compat and migration.
+Release generations are dispatched by a payload prefix in `triggerFinalRelease`
+(`internal/deadswitch/switch.go`). The **current default is a v2 vault + V4
+cloud-only key-split**. The pre-V4 delivery paths (V1 bare passphrase, V2
+`MNEMONIC:` mnemonic-by-email, V3 `SEALED:` sealed-under-passphrase-only) were
+removed — they emailed secrets the V4 key-split deliberately never sends, and no
+public release ever shipped them. A leftover pre-V4 payload now **fails closed
+toward the owner**: the final stage emails the owner an "outdated payload, run
+'kawarimi switch rekey'" alert, sends recipients nothing, and stays un-triggered
+so the alert repeats until fixed (`TestLegacyPayloadNeverReleasesToRecipients`).
 
 | Gen | Prefix | Release mechanism | Status |
 | --- | --- | --- | --- |
-| V1 | *(bare)* | passphrase-only vault | legacy |
-| V2 | `MNEMONIC:` | emails the mnemonic outright | legacy (insecure; `switch verify` flags it) |
-| V3 | `SEALED:` | sealed under passphrase only | legacy |
+| pre-V4 | *(bare)* / `MNEMONIC:` / `SEALED:` | emailed a secret directly | removed; fails closed with a rekey alert |
 | V4 | `DMSKEY:` | emails the DMS key; sealed under DMS key + passphrase | current (local-release opt-in) |
 | V4 | `CLOUDONLY:` | local machine holds no key; cloud releases | **current default** |
 

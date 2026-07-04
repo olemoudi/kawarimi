@@ -14,6 +14,56 @@ import (
 	"github.com/olemoudi/kawarimi/internal/testenv"
 )
 
+// Pre-V4 switch payloads (which emailed secrets outright) are no longer
+// deliverable: the final stage must alert the OWNER, email recipients nothing,
+// and leave the switch un-triggered so the alert repeats until it is fixed.
+func TestLegacyPayloadNeverReleasesToRecipients(t *testing.T) {
+	for _, payload := range []string{"SEALED:abc", "MNEMONIC:word1 word2", "bare-legacy-passphrase"} {
+		t.Run(payload[:6], func(t *testing.T) {
+			env := testenv.New(t)
+			mail := testenv.StartMail(t)
+			sc := env.SwitchConfig(mail, "owner@test", "heir@test")
+
+			appDir := env.AppDir
+			if err := os.MkdirAll(appDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := deadswitch.StoreSwitchPayload(appDir, payload); err != nil {
+				t.Fatal(err)
+			}
+
+			// Final stage, with the clock-jump ratchet satisfied.
+			vaultDir := t.TempDir()
+			targets := deadswitch.CheckinTargets{VaultDir: vaultDir}
+			if _, err := deadswitch.RecordCheckin(targets, time.Now().Add(-40*24*time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			anchor := time.Now().UTC().Add(-20 * 24 * time.Hour).Format(time.RFC3339)
+			if err := os.WriteFile(filepath.Join(appDir, "first-overdue-at"), []byte(anchor), 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			err := deadswitch.Evaluate(targets, sc, appDir)
+			if err == nil || !strings.Contains(err.Error(), "rekey") {
+				t.Fatalf("legacy payload must fail loud with the fix, got %v", err)
+			}
+			if mail.SentTo("heir@test") {
+				t.Fatal("legacy payload must never email recipients")
+			}
+			if !mail.SentTo("owner@test") {
+				t.Fatal("the owner must be alerted that the release could not run")
+			}
+			if !strings.Contains(mail.Last().Subject, "could NOT release") {
+				t.Errorf("owner alert subject = %q", mail.Last().Subject)
+			}
+			// Not marked triggered: the switch keeps alerting until fixed.
+			if _, err := os.Stat(filepath.Join(appDir, "switch-triggered")); !os.IsNotExist(err) {
+				t.Error("a failed release must not mark the switch as triggered")
+			}
+		})
+	}
+}
+
 func TestSendTelegramWarningAndPing(t *testing.T) {
 	tg := testenv.StartTelegram(t)
 	cfg := deadswitch.DefaultSwitchConfig()
