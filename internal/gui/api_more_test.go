@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/olemoudi/kawarimi/internal/selfupdate"
+	"github.com/olemoudi/kawarimi/internal/testenv"
 )
 
 // lockedServer returns a server sharing the (already initialized) HOME but with a
@@ -56,8 +57,7 @@ func TestUnlockEndpoint(t *testing.T) {
 // TestWizardFlow drives the browser wizard's server side exactly as the SPA does:
 // init the vault, configure the switch, verify it, and check in.
 func TestWizardFlow(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testenv.SetHome(t, t.TempDir())
 	s := lockedServer()
 	h := s.routes()
 
@@ -152,7 +152,7 @@ func TestWizardFlow(t *testing.T) {
 }
 
 func TestWizardEndpointsRequireVault(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testenv.SetHome(t, t.TempDir())
 	h := lockedServer().routes()
 	if rec := call(h, "POST", "/api/switch/setup", map[string]any{"smtpServer": "x"}); rec.Code != http.StatusBadRequest {
 		t.Errorf("switch setup without a vault: got %d, want 400", rec.Code)
@@ -234,7 +234,7 @@ func releaseServer(t *testing.T, tag string) *httptest.Server {
 }
 
 func TestUpdateCheckLiveThenCached(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testenv.SetHome(t, t.TempDir())
 	srv := releaseServer(t, "v9.9.9")
 	s := lockedServer()
 	s.opts.Version = "0.1.0"
@@ -264,7 +264,7 @@ func TestUpdateCheckLiveThenCached(t *testing.T) {
 }
 
 func TestUpdateApplyUpToDateAndOffline(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testenv.SetHome(t, t.TempDir())
 	releaseServer(t, "v0.0.1") // older than the running version
 	s := lockedServer()
 	s.opts.Version = "1.0.0"
@@ -350,7 +350,7 @@ func TestRandomToken(t *testing.T) {
 // TestServerLifecycle serves on a real loopback listener and shuts down via the
 // quit path, covering watchLifecycle + shutdown.
 func TestServerLifecycle(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testenv.SetHome(t, t.TempDir())
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

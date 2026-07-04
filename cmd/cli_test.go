@@ -199,7 +199,7 @@ func TestResolveVaultDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chdir(oldWD) })
-	t.Setenv("HOME", t.TempDir()) // no config fallback available
+	testenv.SetHome(t, t.TempDir()) // no config fallback available
 	if dir, err := resolveVaultDir(); err != nil || dir != "vault" {
 		t.Errorf("package auto-detect: dir=%q err=%v", dir, err)
 	}
@@ -295,7 +295,7 @@ func TestUnlockIdentitySlots(t *testing.T) {
 }
 
 func TestUpdateHints(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testenv.SetHome(t, t.TempDir())
 	// Serve a newer release so the hint fires.
 	name := selfupdate.AssetName("linux", "amd64")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

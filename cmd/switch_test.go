@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/deadswitch"
+	"github.com/olemoudi/kawarimi/internal/testenv"
 )
 
 func initBareDMSRemote(t *testing.T) string {
@@ -29,8 +30,7 @@ func initBareDMSRemote(t *testing.T) string {
 // config -> generate workflow -> commit -> push to the (local) DMS remote. It is
 // the automated counterpart to the manual GitHub smoke test.
 func TestRunSwitchSeedPushesWorkflowAndHeartbeat(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testenv.SetHome(t, t.TempDir())
 
 	remote := initBareDMSRemote(t)
 

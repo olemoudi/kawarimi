@@ -3,6 +3,7 @@ package atomicfile
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -27,8 +28,10 @@ func TestWriteFileReplacesAndLeavesNoTemp(t *testing.T) {
 	if len(entries) != 1 {
 		t.Errorf("expected exactly the target file, got %v", entries)
 	}
-	if info, _ := os.Stat(p); info.Mode().Perm() != 0600 {
-		t.Errorf("perm = %v, want 0600", info.Mode().Perm())
+	if runtime.GOOS != "windows" { // Windows does not preserve POSIX modes
+		if info, _ := os.Stat(p); info.Mode().Perm() != 0600 {
+			t.Errorf("perm = %v, want 0600", info.Mode().Perm())
+		}
 	}
 }
 

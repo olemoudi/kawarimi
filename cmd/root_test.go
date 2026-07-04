@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/olemoudi/kawarimi/internal/config"
+	"github.com/olemoudi/kawarimi/internal/testenv"
 	"github.com/olemoudi/kawarimi/internal/vault"
 )
 
@@ -39,8 +40,7 @@ func TestHasNearbySealedPayload(t *testing.T) {
 }
 
 func TestOwnerDeviceKeyExists(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testenv.SetHome(t, t.TempDir())
 
 	if ownerDeviceKeyExists() {
 		t.Error("no device key should exist on a fresh home")

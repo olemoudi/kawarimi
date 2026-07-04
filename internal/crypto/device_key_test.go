@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/olemoudi/kawarimi/internal/crypto"
@@ -94,8 +95,10 @@ func TestSaveLoadDeviceKeyFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0600 {
-		t.Fatalf("expected 0600 permissions, got %o", perm)
+	if runtime.GOOS != "windows" { // Windows does not preserve POSIX modes
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Fatalf("expected 0600 permissions, got %o", perm)
+		}
 	}
 
 	// Load and decrypt

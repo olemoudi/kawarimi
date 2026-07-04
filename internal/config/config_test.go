@@ -20,6 +20,7 @@ func TestSaveAndLoad(t *testing.T) {
 	// Override home directory for test
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome) // os.UserHomeDir on Windows
 
 	cfg := DefaultConfig(filepath.Join(tmpHome, "test-vault"))
 	cfg.SyncTargets.GitRemote = "git@github.com:test/vault.git"
@@ -50,6 +51,7 @@ func TestSaveAndLoad(t *testing.T) {
 func TestLoadMissing(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome) // os.UserHomeDir on Windows
 
 	_, err := Load()
 	if err == nil {

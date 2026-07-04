@@ -21,6 +21,7 @@ func TestGenerateServiceUnit(t *testing.T) {
 func TestInstallSystemdUnits(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome) // os.UserHomeDir on Windows
 
 	if err := InstallSystemdUnits("/usr/local/bin/kawarimi"); err != nil {
 		t.Fatalf("InstallSystemdUnits: %v", err)

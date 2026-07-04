@@ -7,13 +7,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/olemoudi/kawarimi/internal/testenv"
 )
 
 const testToken = "0123456789abcdef0123456789abcdef"
 
 func testServer(t *testing.T) *server {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir()) // isolate config lookups
+	testenv.SetHome(t, t.TempDir()) // isolate config lookups
 	return &server{
 		token:    testToken,
 		addr:     "127.0.0.1:9999",

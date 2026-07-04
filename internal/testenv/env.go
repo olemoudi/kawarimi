@@ -25,13 +25,22 @@ type Env struct {
 // New sets up an isolated HOME for the duration of the test.
 func New(t testing.TB) *Env {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := SetHome(t, t.TempDir())
 	return &Env{
 		Home:     home,
 		AppDir:   filepath.Join(home, config.AppDir),
 		VaultDir: filepath.Join(home, "vault"),
 	}
+}
+
+// SetHome points the process home at dir for the duration of the test. Both HOME
+// and USERPROFILE are set: os.UserHomeDir (which config uses) reads USERPROFILE on
+// Windows, so setting HOME alone silently loses isolation there.
+func SetHome(t testing.TB, dir string) string {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	return dir
 }
 
 // Password is the owner password used for the isolated vault.

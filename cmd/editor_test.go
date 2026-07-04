@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -20,9 +21,13 @@ func TestPromptLine(t *testing.T) {
 }
 
 // fakeEditor installs a script as $EDITOR that appends a line to the file it is
-// given — a stand-in for the user typing into vi.
+// given — a stand-in for the user typing into vi. POSIX-only: Windows cannot exec
+// shebang scripts.
 func fakeEditor(t *testing.T, appendLine string) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake $EDITOR is a shell script")
+	}
 	script := filepath.Join(t.TempDir(), "editor.sh")
 	body := "#!/bin/sh\nprintf '%s\\n' \"" + appendLine + "\" >> \"$1\"\n"
 	if err := os.WriteFile(script, []byte(body), 0755); err != nil {
@@ -43,6 +48,9 @@ func TestEditInEditor(t *testing.T) {
 }
 
 func TestEditInEditorPropagatesEditorFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no `false` binary on Windows")
+	}
 	t.Setenv("EDITOR", "false") // exits 1: the user's edit must not be silently lost
 	if _, err := editInEditor([]byte("x")); err == nil {
 		t.Fatal("a failing editor must surface as an error")

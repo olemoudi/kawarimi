@@ -17,6 +17,7 @@ func testInit(t *testing.T) (*InitSecrets, string, string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	vaultDir := filepath.Join(home, "vault")
 	fast := crypto.TestParams()
 
@@ -113,6 +114,7 @@ func TestInitVaultRefusesSecondInit(t *testing.T) {
 func TestInitVaultRefusesOverExistingHeader(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	vaultDir := filepath.Join(home, "vault")
 	fast := crypto.TestParams()
 	opts := InitOptions{VaultDir: vaultDir, Password: "first password", MnemonicKDFParams: &fast, OwnerKDFParams: &fast}

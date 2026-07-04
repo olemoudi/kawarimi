@@ -12,6 +12,7 @@ import (
 
 	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/setup"
+	"github.com/olemoudi/kawarimi/internal/testenv"
 )
 
 const testPassword = "gui-test-password-123"
@@ -20,8 +21,7 @@ const testPassword = "gui-test-password-123"
 // server with the session already unlocked.
 func newUnlockedServer(t *testing.T) *server {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testenv.SetHome(t, t.TempDir())
 	fast := crypto.TestParams()
 	if _, err := setup.InitVault(setup.InitOptions{
 		VaultDir:          filepath.Join(home, "vault"),
@@ -129,7 +129,7 @@ func TestEntryGetNotFound(t *testing.T) {
 
 func TestEntriesRequireUnlocked(t *testing.T) {
 	// A locked session must not list entries.
-	t.Setenv("HOME", t.TempDir())
+	testenv.SetHome(t, t.TempDir())
 	s := &server{
 		token: testToken, addr: "127.0.0.1:9999", port: "9999",
 		opts: Options{}, sess: &session{}, lastSeen: time.Now(), quit: make(chan struct{}),

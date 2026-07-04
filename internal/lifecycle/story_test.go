@@ -178,7 +178,7 @@ func TestStory_OwnerDiesRecipientOpensVault(t *testing.T) {
 
 	// ---------- RECIPIENT: a fresh machine, only the zip + email + card ----------
 	recipHome := t.TempDir()
-	t.Setenv("HOME", recipHome) // no owner state from here on
+	testenv.SetHome(t, recipHome) // no owner state from here on
 	downloads := filepath.Join(recipHome, "Downloads")
 	if err := os.MkdirAll(downloads, 0755); err != nil {
 		t.Fatal(err)
