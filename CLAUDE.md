@@ -180,11 +180,14 @@ possibly years later — so testing is not negotiable. Do not spare on it.
   actor, mock that actor.
 - **Mock every external actor.** `internal/testenv` is the shared harness: an
   isolated `HOME`, an in-process SMTP server (`MailServer`), Telegram and GitHub
-  API mocks (`TelegramServer`, `GitHubServer`), and a local bare git repo standing
-  in for the cloud DMS repo (`BareRepo`). Reuse and extend it — do not spin up ad
+  API mocks (`TelegramServer`, `GitHubServer`), a real-TLS IMAP mock
+  (`IMAPServer`, trusted via `KAWARIMI_IMAP_CA`), a local bare git repo standing
+  in for the cloud DMS repo (`BareRepo`), and a mini Actions runner for the
+  generated workflow (`RunDMSWorkflow`). Reuse and extend it — do not spin up ad
   hoc servers per test. New integration seams to an external service should honor a
   test override (e.g. an env-var base URL like `KAWARIMI_GITHUB_API` /
-  `KAWARIMI_TELEGRAM_API`) so the harness can redirect them.
+  `KAWARIMI_TELEGRAM_API`, or a CA override like `KAWARIMI_IMAP_CA`) so the
+  harness can redirect them.
 - **Cover the whole vault lifecycle.** End-to-end scenarios live in
   `internal/lifecycle`: init → arm → check-in → overdue → warnings → final release
   → recipient decrypts, plus fail-closed (missing/unparseable heartbeat), check-in

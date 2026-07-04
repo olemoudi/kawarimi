@@ -306,6 +306,38 @@ func TestLifecycle_AliveCloudPushFailureAlertsOwner(t *testing.T) {
 }
 
 // A Telegram /alive reply auto-checks-in during evaluation, keeping the switch quiet.
+// An ALIVE email reply found over IMAP counts as a check-in: the switch must not
+// warn or release, and the heartbeat must refresh — the mirror of the Telegram
+// /alive path, over the second reply channel.
+func TestLifecycle_IMAPAliveAutoCheckin(t *testing.T) {
+	env := testenv.New(t)
+	mail := testenv.StartMail(t)
+	imap := testenv.StartIMAP(t)
+	env.InitVault(t)
+
+	sc := env.SwitchConfig(mail, "owner@test", "heir@test")
+	sc.IMAPServer = imap.Host
+	sc.IMAPPort = imap.Port
+	env.ArmSwitch(t, sc, true)
+
+	env.SetLastCheckinDaysAgo(t, 40)
+	imap.ScriptAlive("3") // an ALIVE reply is sitting in the inbox
+
+	if err := deadswitch.Evaluate(env.CheckinTargets(""), sc, env.AppDir); err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if mail.SentTo("heir@test") {
+		t.Fatal("released despite an ALIVE email reply")
+	}
+	days, err := deadswitch.DaysSinceCheckin(env.VaultDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if days != 0 {
+		t.Errorf("expected a fresh check-in after the ALIVE reply, got %d days", days)
+	}
+}
+
 func TestLifecycle_TelegramAliveAutoCheckin(t *testing.T) {
 	env := testenv.New(t)
 	mail := testenv.StartMail(t)

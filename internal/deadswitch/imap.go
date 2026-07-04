@@ -3,15 +3,41 @@ package deadswitch
 import (
 	"bufio"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 )
 
 // imapTimeout bounds the whole IMAP session so a server that accepts the connection
-// and then stalls cannot hang an unattended evaluate run.
-const imapTimeout = 30 * time.Second
+// and then stalls cannot hang an unattended evaluate run. Vars so tests can shorten
+// them (same idiom as smtpTimeout in notify.go).
+var (
+	imapTimeout     = 30 * time.Second
+	imapDialTimeout = 10 * time.Second
+)
+
+// imapTLSConfig returns the TLS config for the IMAP connection. KAWARIMI_IMAP_CA may
+// point at a PEM file whose certs are added to the trusted roots — the same test
+// override convention as KAWARIMI_GITHUB_API / KAWARIMI_TELEGRAM_API, and additive
+// only: the connection is always TLS with hostname verification.
+func imapTLSConfig(serverName string) *tls.Config {
+	cfg := &tls.Config{ServerName: serverName}
+	if caPath := os.Getenv("KAWARIMI_IMAP_CA"); caPath != "" {
+		if pem, err := os.ReadFile(caPath); err == nil {
+			pool, perr := x509.SystemCertPool()
+			if perr != nil || pool == nil {
+				pool = x509.NewCertPool()
+			}
+			if pool.AppendCertsFromPEM(pem) {
+				cfg.RootCAs = pool
+			}
+		}
+	}
+	return cfg
+}
 
 // imapQuote produces an IMAP quoted string (RFC 3501), escaping backslash and quote.
 // Go's %q is NOT valid IMAP quoting (it escapes control chars in ways IMAP rejects).
@@ -37,9 +63,7 @@ func CheckIMAPForAlive(cfg *SwitchConfig, since time.Time) (bool, error) {
 	addr := fmt.Sprintf("%s:%d", cfg.IMAPServer, port)
 
 	// Connect with TLS
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", addr, &tls.Config{
-		ServerName: cfg.IMAPServer,
-	})
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: imapDialTimeout}, "tcp", addr, imapTLSConfig(cfg.IMAPServer))
 	if err != nil {
 		return false, fmt.Errorf("IMAP connect: %w", err)
 	}
