@@ -33,8 +33,8 @@ The name ("kawarimi", Japanese *body-substitution*) is only branding; it is not
 a code concept.
 
 It is a **single Go binary** (`github.com/olemoudi/kawarimi`, Go 1.25+). The
-same binary is the owner's CLI, the owner's TUI, and — when run next to a
-package — the recipient's wizard. There is **no custom server**: the "server" is
+same binary is the owner's CLI, the owner's browser console, and — when run
+next to a package — the recipient's wizard. There is **no custom server**: the "server" is
 generated GitHub Actions YAML running in a repository the owner owns.
 
 ---
@@ -65,7 +65,7 @@ so double-clicking the binary inside an extracted package "just works".
 
 | Path | Responsibility |
 | --- | --- |
-| `cmd/` | Cobra command layer, one file per command (`init`, `add`, `list`, `show`, `edit`, `remove`, `export`, `status`, `verify`, `passwd`, `migrate`, `open`, `tui`, `gui`, `sync`, `checkin`, `device`, `switch`, `package`) |
+| `cmd/` | Cobra command layer, one file per command (`init`, `add`, `list`, `show`, `edit`, `remove`, `export`, `status`, `verify`, `passwd`, `migrate`, `open`, `gui`, `sync`, `checkin`, `device`, `switch`, `package`) |
 | `internal/vault/` | The vault model: multi-slot key header, entries, manifest, packaging, recipient cross-compile, V4 sealed-open, v1→v2 migration, device enrollment |
 | `internal/crypto/` | All cryptographic primitives (age wrappers, Argon2id + HKDF, AES-GCM keywrap, mnemonic, recovery code, recipient passphrase, device key, V4 sealing, memory zeroing) |
 | `internal/deadswitch/` | The DMS engine: stage evaluation & release, check-in + heartbeat push, GitHub Actions workflow generation, systemd units, SMTP/Telegram/IMAP, health verification |
@@ -76,7 +76,6 @@ so double-clicking the binary inside an extracted package "just works".
 | `internal/config/` | Non-sensitive JSON config at `~/.kawarimi/config.json`; derives app-dir and DMS-clone paths |
 | `internal/recipient/` | The bilingual, plain-stdin recipient wizard |
 | `internal/copytext/` | Centralized bilingual copy (package instructions, release email body) — single source of truth |
-| `internal/tui/` | Optional owner-facing Bubble Tea terminal UI (Elm-style `Update`/`Msg`) over the same vault APIs |
 
 `internal/*` is deliberately not importable from outside the module.
 
@@ -404,8 +403,6 @@ mode the local `dms-key` is deleted once the GitHub secret is set.
 - **Auto-shutdown** — a keepalive ping keeps the server alive while the tab is open;
   it exits on idle (deferred while any request is in flight, so a long package build
   is never killed mid-way), on `Quit`, or on Ctrl-C.
-
-The existing Bubble Tea `kawarimi tui` is unchanged and complementary.
 
 ---
 

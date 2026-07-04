@@ -51,7 +51,7 @@ func (s *session) vaultEntryCount() int {
 }
 
 // unlock opens the vault via the owner slot (password + this device's key), exactly
-// as the CLI and TUI do. On success the vault is held in the session.
+// as the CLI does. On success the vault is held in the session.
 func (s *session) unlock(password string) error {
 	cfg, err := config.Load()
 	if err != nil {
