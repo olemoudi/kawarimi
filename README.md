@@ -87,6 +87,25 @@ When the switch fires, the recipient gets an email with a **key**. They:
 All recipient-facing text (package instructions, the release email, the wizard)
 is bilingual: **Spanish first, then English**.
 
+## Keeping kawarimi up to date
+
+kawarimi updates itself. When a new version is released, the owner console shows an
+**Update available** banner (and CLI commands print a one-line hint); one click, or
+`kawarimi update`, downloads the new version, **verifies its Ed25519 signature and
+checksum**, and replaces the binary. Restart and you're on the new version. Only the
+owner tool self-updates — a recipient opening a vault package never does.
+
+Two things migrate automatically or with a nudge:
+
+- **Your vault.** If a new version needs a newer on-disk format, kawarimi upgrades
+  your vault in place the next time you open it, keeping a timestamped backup under
+  `~/.kawarimi/backups/`. Nothing to do.
+- **Your cloud switch.** The dead man's switch automation is pushed to GitHub once,
+  so a later improvement (or security fix) doesn't reach it automatically. After
+  updating, run `kawarimi switch verify`; if it says the automation is outdated, run
+  `kawarimi switch seed` to refresh it. If you changed vault contents, also re-run
+  `kawarimi package build` and re-upload.
+
 ## How it works
 
 The vault is encrypted with [age](https://github.com/FiloSottile/age) (X25519).

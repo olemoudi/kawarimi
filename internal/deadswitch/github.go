@@ -85,12 +85,21 @@ jobs:
 }
 
 // dmsWorkflowParams are the fields substituted into dmsWorkflowText.
+// DMSWorkflowVersion is the generation of the generated cloud DMS workflow. Bump it
+// whenever the workflow's logic changes materially (a new mailer, a security fix, a
+// step change) so a deployed switch running an older automation is detected as
+// outdated and the owner is told to re-run `kawarimi switch seed`. History:
+// v1 = the original dawidd6/action-send-mail workflow; v2 = the self-contained curl
+// mailer (no third-party action, templated SMTP port/scheme).
+const DMSWorkflowVersion = 2
+
 type dmsWorkflowParams struct {
-	Warning1Days int
-	FinalDays    int
-	SMTPPort     int    // templated into the workflow (was hardcoded 587)
-	Scheme       string // "smtp" (STARTTLS) or "smtps" (implicit TLS on 465)
-	Telegram     bool   // include a Telegram owner-alert step
+	WorkflowVersion int
+	Warning1Days    int
+	FinalDays       int
+	SMTPPort        int    // templated into the workflow (was hardcoded 587)
+	Scheme          string // "smtp" (STARTTLS) or "smtps" (implicit TLS on 465)
+	Telegram        bool   // include a Telegram owner-alert step
 }
 
 // dmsWorkflowTmpl renders the standalone DMS repo workflow. It uses [[ ]] delimiters
@@ -117,11 +126,12 @@ func GenerateGitHubDMSWorkflow(cfg *SwitchConfig) string {
 		scheme = "smtps" // implicit TLS
 	}
 	params := dmsWorkflowParams{
-		Warning1Days: cfg.Warning1Days,
-		FinalDays:    cfg.FinalDays,
-		SMTPPort:     port,
-		Scheme:       scheme,
-		Telegram:     cfg.TelegramBotToken != "",
+		WorkflowVersion: DMSWorkflowVersion,
+		Warning1Days:    cfg.Warning1Days,
+		FinalDays:       cfg.FinalDays,
+		SMTPPort:        port,
+		Scheme:          scheme,
+		Telegram:        cfg.TelegramBotToken != "",
 	}
 	var buf bytes.Buffer
 	if err := dmsWorkflowTmpl.Execute(&buf, params); err != nil {
@@ -136,7 +146,8 @@ func GenerateGitHubDMSWorkflow(cfg *SwitchConfig) string {
 // tool preinstalled on GitHub runners and among the most stable in existence) rather
 // than a third-party Action, so nothing beyond GitHub's own actions/checkout can
 // vanish or be deprecated out from under it over the years it must keep working.
-const dmsWorkflowText = `name: Dead Man's Switch
+const dmsWorkflowText = `# kawarimi-dms-workflow-version: [[.WorkflowVersion]]
+name: Dead Man's Switch
 on:
   schedule:
     - cron: '0 9 * * *'  # Daily at 9am UTC

@@ -92,6 +92,7 @@ func (s *server) handleSwitchVerify(w http.ResponseWriter, r *http.Request) {
 		"remoteStale":      report.RemoteStale,
 		"workflowPresent":  report.WorkflowPresent,
 		"workflowUpToDate": report.WorkflowUpToDate,
+		"workflowOutdated": report.WorkflowOutdated,
 		"triggered":        report.Triggered,
 		"finalDaysRisky":   report.FinalDaysRisky,
 	})

@@ -107,3 +107,20 @@ func TestVerifyStaleHeartbeat(t *testing.T) {
 		t.Error("verify should fail when the remote heartbeat is stale")
 	}
 }
+
+// The generated workflow carries the current version marker, and an older/absent
+// marker in a deployed workflow is detected as outdated so the owner is told to
+// re-seed (a workflow security fix must actually reach the cloud).
+func TestWorkflowVersionDrift(t *testing.T) {
+	current := GenerateGitHubDMSWorkflow(DefaultSwitchConfig())
+	if got := parseWorkflowVersion(current); got != DMSWorkflowVersion {
+		t.Errorf("generated workflow marker = %d, want %d", got, DMSWorkflowVersion)
+	}
+	// A pre-marker (dawidd6-era) workflow parses as version 0 → outdated.
+	if got := parseWorkflowVersion("name: Dead Man's Switch\non: {}\n"); got != 0 {
+		t.Errorf("marker-less workflow should parse as 0, got %d", got)
+	}
+	if !(0 < DMSWorkflowVersion) {
+		t.Error("a version-0 deployed workflow must be considered outdated")
+	}
+}

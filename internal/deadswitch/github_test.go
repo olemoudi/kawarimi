@@ -111,6 +111,7 @@ func TestGenerateGitHubDMSWorkflowInvariants(t *testing.T) {
 		"Alert owner of DMS misconfiguration",
 		"permissions:", // least privilege
 		"actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+		"# kawarimi-dms-workflow-version: 2",    // version marker for drift detection
 		"curl --silent --show-error --ssl-reqd", // email sent via curl, no third-party action
 		"smtp://$SMTP_SERVER:587",               // templated scheme + default port (was hardcoded 587)
 		"--mail-rcpt",

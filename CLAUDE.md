@@ -228,3 +228,16 @@ With each new added functionality, consider whether you are adding some security
 - Handle corner cases gracefully
 - Create security tests when needed
 - Ensure app privacy and security principles are always safeguarded. If we are using end-to-end encryption, ensure all new fields get encrypted when new features are created.
+- **The recipient path must never gain a network call or a self-update.** The
+  recipient binary is frozen by design so it can open the vault years later,
+  offline, post-mortem. Self-update (`internal/selfupdate`) and any release/version
+  checks are OWNER-only and gated behind owner context in `cmd/root.go`.
+- **Never commit the release signing private key.** Updates are trusted via an
+  Ed25519 signature over `checksums.txt`; the private key lives only as the
+  `RELEASE_SIGNING_KEY` GitHub Actions secret, and the public key is baked into
+  `internal/selfupdate`. `.gitignore` blocks `release-signing-key*` / `*.key`.
+- **Version every on-disk format and fail safe forward.** New binaries migrate old
+  formats forward (with a backup); an old binary must refuse a newer format with a
+  "please update" message rather than misreading it (see `parseHeader` and
+  `internal/vault/migrate_framework.go`). Bump `DMSWorkflowVersion` when the
+  generated cloud workflow changes so deployed switches are flagged for re-seeding.

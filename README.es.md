@@ -93,6 +93,27 @@ Cuando el interruptor se dispara, el destinatario recibe un correo con una
 Todo el texto orientado al destinatario (instrucciones del paquete, correo de
 entrega, asistente) es bilingüe: **primero español, luego inglés**.
 
+## Mantener kawarimi actualizado
+
+kawarimi se actualiza solo. Cuando hay una versión nueva, la consola muestra un
+aviso **Actualización disponible** (y los comandos muestran una línea de aviso); con
+un clic, o con `kawarimi update`, se descarga la nueva versión, se **verifica su
+firma Ed25519 y su checksum**, y se reemplaza el programa. Reinícialo y ya estás en
+la versión nueva. Solo el programa del titular se autoactualiza — el destinatario
+que abre un paquete nunca lo hace.
+
+Dos cosas migran de forma automática o con un aviso:
+
+- **Tu caja fuerte.** Si una versión nueva necesita un formato en disco más reciente,
+  kawarimi actualiza tu caja fuerte al abrirla, guardando una copia de seguridad con
+  fecha en `~/.kawarimi/backups/`. No tienes que hacer nada.
+- **Tu interruptor en la nube.** La automatización del interruptor se sube a GitHub
+  una sola vez, así que una mejora posterior (o una corrección de seguridad) no llega
+  sola. Tras actualizar, ejecuta `kawarimi switch verify`; si dice que la
+  automatización está anticuada, ejecuta `kawarimi switch seed` para renovarla. Si
+  cambiaste el contenido de la caja fuerte, vuelve a ejecutar `kawarimi package
+  build` y súbelo de nuevo.
+
 ## Cómo funciona
 
 La caja fuerte se cifra con [age](https://github.com/FiloSottile/age) (X25519).

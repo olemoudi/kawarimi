@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -78,9 +79,12 @@ func (s *session) unlock(password string) error {
 	if err != nil {
 		return fmt.Errorf("unlock failed: %w", err)
 	}
-	v, err := vault.OpenV2(cfg.VaultDir, ageIdentity, header.AgeRecipient)
+	v, backup, err := vault.OpenV2Migrating(cfg.VaultDir, ageIdentity, header.AgeRecipient, appDir)
 	if err != nil {
 		return fmt.Errorf("opening vault: %w", err)
+	}
+	if backup != "" {
+		fmt.Fprintf(os.Stderr, "kawarimi: vault upgraded to the latest format (backup kept at %s)\n", backup)
 	}
 
 	s.mu.Lock()

@@ -10,6 +10,7 @@ import (
 	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/gui"
 	"github.com/olemoudi/kawarimi/internal/recipient"
+	"github.com/olemoudi/kawarimi/internal/selfupdate"
 	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
 )
@@ -123,6 +124,7 @@ func hasNearbySealedPayload(cwd, exeDir string) bool {
 }
 
 func Execute() {
+	selfupdate.CleanupOld() // remove a leftover <exe>.old from a previous Windows update
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -218,9 +220,13 @@ func openWithDeviceKey(cfg *config.Config, header *vault.Header, deviceKeyPath s
 		return nil, fmt.Errorf("unlocking vault: %w", err)
 	}
 
-	v, err := vault.OpenV2(cfg.VaultDir, ageIdentity, header.AgeRecipient)
+	appDir, _ := config.AppDirPath()
+	v, backup, err := vault.OpenV2Migrating(cfg.VaultDir, ageIdentity, header.AgeRecipient, appDir)
 	if err != nil {
 		return nil, fmt.Errorf("opening vault: %w", err)
+	}
+	if backup != "" {
+		fmt.Fprintf(os.Stderr, "Your vault was upgraded to the latest format (backup kept at %s).\n", backup)
 	}
 
 	return v, nil
@@ -246,9 +252,13 @@ func openWithRecovery(cfg *config.Config, header *vault.Header) (*vault.Vault, e
 		return nil, fmt.Errorf("unlocking vault: %w", err)
 	}
 
-	v, err := vault.OpenV2(cfg.VaultDir, ageIdentity, header.AgeRecipient)
+	appDir, _ := config.AppDirPath()
+	v, backup, err := vault.OpenV2Migrating(cfg.VaultDir, ageIdentity, header.AgeRecipient, appDir)
 	if err != nil {
 		return nil, fmt.Errorf("opening vault: %w", err)
+	}
+	if backup != "" {
+		fmt.Fprintf(os.Stderr, "Your vault was upgraded to the latest format (backup kept at %s).\n", backup)
 	}
 
 	return v, nil
@@ -270,9 +280,13 @@ func openWithMnemonic(cfg *config.Config, header *vault.Header) (*vault.Vault, e
 		return nil, fmt.Errorf("unlocking vault: %w", err)
 	}
 
-	v, err := vault.OpenV2(cfg.VaultDir, ageIdentity, header.AgeRecipient)
+	appDir, _ := config.AppDirPath()
+	v, backup, err := vault.OpenV2Migrating(cfg.VaultDir, ageIdentity, header.AgeRecipient, appDir)
 	if err != nil {
 		return nil, fmt.Errorf("opening vault: %w", err)
+	}
+	if backup != "" {
+		fmt.Fprintf(os.Stderr, "Your vault was upgraded to the latest format (backup kept at %s).\n", backup)
 	}
 
 	return v, nil

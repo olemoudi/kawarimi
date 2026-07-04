@@ -379,14 +379,21 @@ func SaveHeader(vaultDir string, h *Header) error {
 	return atomicfile.WriteFileBackup(path, data, 0600)
 }
 
-// parseHeader unmarshals and version-checks header bytes.
+// parseHeader unmarshals and version-checks header bytes. Compatibility policy: this
+// binary accepts any header from version 1 up to the version it knows
+// (HeaderVersion) — an older vault is opened and migrated forward — and refuses a
+// NEWER one with a clear "please update" message, so an out-of-date binary can never
+// misread a future format (fail safe forward).
 func parseHeader(data []byte) (*Header, error) {
 	var h Header
 	if err := json.Unmarshal(data, &h); err != nil {
 		return nil, fmt.Errorf("parsing header: %w", err)
 	}
-	if h.Version != HeaderVersion {
-		return nil, fmt.Errorf("unsupported vault header version: %d (expected %d)", h.Version, HeaderVersion)
+	if h.Version < 1 {
+		return nil, fmt.Errorf("invalid vault header version: %d", h.Version)
+	}
+	if h.Version > HeaderVersion {
+		return nil, fmt.Errorf("this vault was created by a newer version of kawarimi (format v%d, this binary understands up to v%d) — update kawarimi and try again", h.Version, HeaderVersion)
 	}
 	return &h, nil
 }

@@ -427,6 +427,40 @@ back-compat and migration.
 Vault format itself migrated v1 → v2 (single-passphrase → multi-slot identity);
 see [`internal/vault/migrate.go`](internal/vault/migrate.go).
 
+### Updates & migrations
+
+The owner binary self-updates from **signed** GitHub releases
+([`internal/selfupdate/`](internal/selfupdate/)). Every download is verified twice —
+an **Ed25519 signature over `checksums.txt`** (against a public key baked into the
+binary; the private key is a maintainer secret used by
+[`tools/ksign`](tools/ksign/) in the release workflow) and then the binary's
+**SHA-256** against that trusted checksums file — before an atomic self-replace
+(POSIX rename; Windows rename-aside + `CleanupOld`). It is pure stdlib crypto and
+**owner-only**: `kawarimi update` and the GUI "Update available" banner call it; the
+recipient path never does, because the bundled recipient binary must open the vault
+years later, offline. A daily cached check (`~/.kawarimi/update-check.json`) drives a
+one-line hint after `status`/`checkin`.
+
+Three kinds of migration keep an install current:
+
+- **Vault format.** `parseHeader` accepts any header version from 1 up to the one it
+  knows and **refuses a newer one** with a "please update" message (fail safe
+  forward). A registry (`vaultMigrations`, [`internal/vault/migrate_framework.go`](internal/vault/migrate_framework.go))
+  drives `OpenV2Migrating`, which every owner unlock path uses: an older vault is
+  upgraded in place — atomic, verified, with a timestamped backup under
+  `~/.kawarimi/backups/` — before it opens. The registry is empty today (v2 is
+  current); a future bump is a one-line addition that then migrates everyone
+  seamlessly. `config.json` carries a `version` for the same reason.
+- **Cloud DMS workflow.** The generated workflow carries a
+  `# kawarimi-dms-workflow-version: N` marker (`DMSWorkflowVersion`,
+  [`internal/deadswitch/github.go`](internal/deadswitch/github.go)); the deployed
+  workflow is pushed once at `switch seed` time and would otherwise freeze. `switch
+  verify` reads the deployed marker and reports **outdated automation** (e.g. an
+  old dawidd6-era workflow, version 0) so the owner re-runs `switch seed` to push
+  the improved/security-fixed workflow to the cloud — the real post-mortem trigger.
+- **Recipient package.** After a vault change, the uploaded package is a snapshot;
+  the owner re-runs `package build` and re-uploads. `switch rekey` already says so.
+
 ---
 
 ## 13. Build, CI, release
@@ -445,7 +479,9 @@ see [`internal/vault/migrate.go`](internal/vault/migrate.go).
   pushing a `v*` tag runs goreleaser and publishes a **draft** GitHub release
   with the five per-platform binaries + `checksums.txt` (raw binaries, so the
   assets double as `package build --binaries` input); the owner reviews the
-  draft and clicks Publish.
+  draft and clicks Publish. goreleaser Ed25519-**signs** `checksums.txt` via
+  [`tools/ksign`](tools/ksign/) using the `RELEASE_SIGNING_KEY` secret, producing
+  `checksums.txt.sig` — the signature `internal/selfupdate` verifies (see §12).
 - **Release** ([`.goreleaser.yml`](.goreleaser.yml)): goreleaser v2,
   `CGO_ENABLED=0`, linux/darwin/windows × amd64/arm64, binaries named
   `kawarimi-{{.Os}}-{{.Arch}}` so `dist/` feeds straight into
@@ -554,6 +590,7 @@ the same commit (the CLAUDE.md "Documentation" rule enforces this):
 | on-disk files / the two-repo split | §5, §9 |
 | the browser GUI (server, security, or an API endpoint) | §11 |
 | a payload prefix / a new generation | §12 |
+| the self-updater, a vault/config format bump, or the workflow version | §12 (Updates & migrations) |
 | build, CI, or release config | §13 |
 | a security invariant / test | §14 |
 | the owner or recipient flow | §15 + `docs/usage-flow.md` (keep both diagrams byte-identical) |

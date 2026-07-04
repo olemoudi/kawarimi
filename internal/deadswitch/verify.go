@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,12 @@ type VerifyReport struct {
 
 	WorkflowPresent  bool
 	WorkflowUpToDate bool
+	// DeployedWorkflowVersion is the automation generation running in the DMS repo
+	// (0 = pre-marker, e.g. the original dawidd6 workflow). WorkflowOutdated is true
+	// when it lags this binary's DMSWorkflowVersion — the owner should re-run
+	// `switch seed` so a workflow improvement/security fix actually reaches the cloud.
+	DeployedWorkflowVersion int
+	WorkflowOutdated        bool
 
 	Triggered           bool
 	SystemdTimerActive  bool
@@ -86,6 +93,8 @@ func Verify(targets CheckinTargets, switchCfg *SwitchConfig, appDir string) (*Ve
 		if content, err := gs.ReadRemoteFile(".github/workflows/deadman.yml"); err == nil {
 			r.WorkflowPresent = true
 			r.WorkflowUpToDate = strings.TrimSpace(content) == strings.TrimSpace(GenerateGitHubDMSWorkflow(switchCfg))
+			r.DeployedWorkflowVersion = parseWorkflowVersion(content)
+			r.WorkflowOutdated = r.DeployedWorkflowVersion < DMSWorkflowVersion
 		}
 	}
 
@@ -108,6 +117,20 @@ func (r *VerifyReport) OK() bool {
 		}
 	}
 	return true
+}
+
+// parseWorkflowVersion reads the "# kawarimi-dms-workflow-version: N" marker from a
+// deployed workflow, or 0 if absent (a pre-marker generation).
+func parseWorkflowVersion(content string) int {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if v, ok := strings.CutPrefix(line, "# kawarimi-dms-workflow-version:"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				return n
+			}
+		}
+	}
+	return 0
 }
 
 func systemdTimerActive() bool {

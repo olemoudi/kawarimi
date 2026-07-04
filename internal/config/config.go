@@ -16,8 +16,14 @@ const (
 	DMSRepoName = "dms-repo"
 )
 
+// ConfigVersion is the current config.json format version. A missing/zero value in
+// an on-disk config means "pre-versioning" (treat as 1); it exists so a future
+// format change has a migration hook, mirroring the vault header's version policy.
+const ConfigVersion = 1
+
 // Config holds non-sensitive application configuration.
 type Config struct {
+	Version         int         `json:"version,omitempty"`
 	VaultDir        string      `json:"vault_dir"`
 	CheckinInterval int         `json:"checkin_interval_days"`
 	AutoSync        AutoSync    `json:"auto_sync"`
@@ -41,6 +47,7 @@ type SyncTargets struct {
 // DefaultConfig returns a config with sensible defaults.
 func DefaultConfig(vaultDir string) *Config {
 	return &Config{
+		Version:         ConfigVersion,
 		VaultDir:        vaultDir,
 		CheckinInterval: 7,
 		AutoSync: AutoSync{

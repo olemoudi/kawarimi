@@ -684,10 +684,13 @@ func printVerifyReport(r *deadswitch.VerifyReport, switchCfg *deadswitch.SwitchC
 		switch {
 		case !r.WorkflowPresent:
 			fmt.Printf("%s Workflow: missing on remote (run 'kawarimi switch seed')\n", mark(false))
+		case r.WorkflowOutdated:
+			fmt.Printf("%s Workflow: OLDER AUTOMATION (deployed v%d, this kawarimi ships v%d) —\n", mark(false), r.DeployedWorkflowVersion, deadswitch.DMSWorkflowVersion)
+			fmt.Println("       run 'kawarimi switch seed' so the improved automation reaches the cloud.")
 		case !r.WorkflowUpToDate:
 			fmt.Printf("%s Workflow: OUT OF DATE (run 'kawarimi switch seed' to update it)\n", mark(false))
 		default:
-			fmt.Printf("%s Workflow: up to date\n", mark(true))
+			fmt.Printf("%s Workflow: up to date (v%d)\n", mark(true), deadswitch.DMSWorkflowVersion)
 		}
 	}
 
