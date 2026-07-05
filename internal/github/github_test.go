@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/nacl/box"
@@ -150,6 +151,78 @@ func TestSetActionsSecretsRoundTrip(t *testing.T) {
 	for k, v := range want {
 		if got[k] != v {
 			t.Errorf("secret %s round-tripped as %q, want %q", k, got[k], v)
+		}
+	}
+}
+
+// TestSetActionsSecretSingle covers the single-secret variant (same sealing, one
+// public-key fetch per call).
+func TestSetActionsSecretSingle(t *testing.T) {
+	pub, priv, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubB64 := base64.StdEncoding.EncodeToString(pub[:])
+
+	var gotName, gotValue string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(publicKey{KeyID: "key-1", Key: pubB64})
+		case r.Method == http.MethodPut:
+			var body struct {
+				EncryptedValue string `json:"encrypted_value"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+			ciphertext, _ := base64.StdEncoding.DecodeString(body.EncryptedValue)
+			plain, ok := box.OpenAnonymous(nil, ciphertext, pub, priv)
+			if !ok {
+				t.Fatal("could not open sealed box")
+			}
+			gotName = r.URL.Path[len("/repos/olemoudi/dms/actions/secrets/"):]
+			gotValue = string(plain)
+			w.WriteHeader(http.StatusNoContent) // "updated" — must be accepted like 201
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	if err := newTestClient(srv.URL).SetActionsSecret(context.Background(), "olemoudi", "dms", "DMS_KEY", "v"); err != nil {
+		t.Fatalf("SetActionsSecret: %v", err)
+	}
+	if gotName != "DMS_KEY" || gotValue != "v" {
+		t.Errorf("server saw %s=%q, want DMS_KEY=v", gotName, gotValue)
+	}
+}
+
+// API failures must surface status + body (apiError), and an empty body must
+// still produce a useful message.
+func TestSetActionsSecretServerErrors(t *testing.T) {
+	pub, _, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubB64 := base64.StdEncoding.EncodeToString(pub[:])
+
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		{"with body", `{"message":"denied"}`, "denied"},
+		{"empty body", "", "HTTP 403"},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				json.NewEncoder(w).Encode(publicKey{KeyID: "key-1", Key: pubB64})
+				return
+			}
+			w.WriteHeader(http.StatusForbidden)
+			io.WriteString(w, tc.body)
+		}))
+		err := newTestClient(srv.URL).SetActionsSecret(context.Background(), "o", "r", "N", "v")
+		srv.Close()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want it to contain %q", tc.name, err, tc.want)
 		}
 	}
 }

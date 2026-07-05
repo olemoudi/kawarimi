@@ -77,3 +77,29 @@ func TestFirstRunDecision(t *testing.T) {
 		}
 	}
 }
+
+// configExists / nearbyPayloadExists feed the first-run auto-launch decision.
+func TestConfigExists(t *testing.T) {
+	env := testenv.New(t)
+	if configExists() {
+		t.Fatal("fresh HOME must have no config")
+	}
+	env.InitVault(t)
+	if !configExists() {
+		t.Fatal("configExists must be true after init")
+	}
+}
+
+func TestNearbyPayloadExists(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if nearbyPayloadExists() {
+		t.Fatal("empty cwd must have no nearby payload")
+	}
+	if err := os.WriteFile(filepath.Join(dir, vault.SealedPayloadFile), []byte("age"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !nearbyPayloadExists() {
+		t.Fatal("a sealed payload in cwd must be detected")
+	}
+}

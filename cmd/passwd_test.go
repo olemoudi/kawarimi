@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/olemoudi/kawarimi/internal/config"
 	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/testenv"
 	"github.com/olemoudi/kawarimi/internal/vault"
@@ -60,5 +62,51 @@ func TestPasswdRotatesEverySlot(t *testing.T) {
 	withStdin(t, "not-the-password\nx\nx\n")
 	if err := passwdV2(cfg); err == nil {
 		t.Fatal("passwd with a wrong current password must fail")
+	}
+}
+
+// The legacy v1 path: `kawarimi passwd` on a passphrase-only vault must
+// re-encrypt every entry + the manifest under the new passphrase.
+func TestPasswdV1ReencryptsVault(t *testing.T) {
+	home := testenv.SetHome(t, t.TempDir())
+	dir := filepath.Join(home, "v1-vault")
+
+	v1, err := vault.Create(dir, "old passphrase")
+	if err != nil {
+		t.Fatalf("Create v1: %v", err)
+	}
+	if _, err := v1.AddNote("Bank", []byte("acct 42"), nil); err != nil {
+		t.Fatalf("AddNote: %v", err)
+	}
+
+	cfg := config.DefaultConfig(dir)
+	if err := config.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	// current passphrase, then the new one twice (confirm).
+	withStdin(t, "old passphrase\nnew passphrase 42\nnew passphrase 42\n")
+	if err := passwdV1(cfg); err != nil {
+		t.Fatalf("passwdV1: %v", err)
+	}
+
+	// New passphrase decrypts the manifest and the entry; the old one must not.
+	if ok, err := openVaultWithPassphrase(dir, "new passphrase 42"); !ok {
+		t.Fatalf("new passphrase must open the v1 vault: %v", err)
+	}
+	if ok, _ := openVaultWithPassphrase(dir, "old passphrase"); ok {
+		t.Error("the old passphrase must not open the vault after passwd")
+	}
+
+	v, err := vault.Open(dir, "new passphrase 42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Manifest.Entries) != 1 {
+		t.Fatalf("expected 1 entry after rekey, got %d", len(v.Manifest.Entries))
+	}
+	data, err := v.ShowEntry(v.Manifest.Entries[0])
+	if err != nil || string(data) != "acct 42" {
+		t.Errorf("entry content after rekey = %q, %v", data, err)
 	}
 }

@@ -50,15 +50,36 @@ type server struct {
 
 // Run starts the GUI server and blocks until it shuts down (idle, quit, or signal).
 func Run(opts Options) error {
+	s, ln, url, err := newGUIServer(opts)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\nkawarimi GUI is running at:\n  %s\n\n", url)
+	fmt.Println("Keep this terminal open. Use \"Quit\" in the page or press Ctrl-C to stop.")
+	if !opts.NoBrowser {
+		if err := openBrowser(url); err != nil {
+			fmt.Printf("(couldn't open a browser automatically: %v — open the URL above)\n", err)
+		}
+	}
+
+	return s.serve(ln)
+}
+
+// newGUIServer binds the loopback listener and builds the server plus the
+// tokenized launch URL. Split from Run so tests can drive the full lifecycle
+// over a real socket without opening a browser.
+func newGUIServer(opts Options) (*server, net.Listener, string, error) {
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", opts.Port))
 	if err != nil {
-		return fmt.Errorf("listening on loopback: %w", err)
+		return nil, nil, "", fmt.Errorf("listening on loopback: %w", err)
 	}
 	port := fmt.Sprintf("%d", ln.Addr().(*net.TCPAddr).Port)
 
 	token, err := randomToken()
 	if err != nil {
-		return err
+		ln.Close()
+		return nil, nil, "", err
 	}
 
 	s := &server{
@@ -72,15 +93,11 @@ func Run(opts Options) error {
 	}
 	s.httpSrv = &http.Server{Handler: s.routes()}
 
-	url := fmt.Sprintf("http://%s/?t=%s", s.addr, token)
-	fmt.Printf("\nkawarimi GUI is running at:\n  %s\n\n", url)
-	fmt.Println("Keep this terminal open. Use \"Quit\" in the page or press Ctrl-C to stop.")
-	if !opts.NoBrowser {
-		if err := openBrowser(url); err != nil {
-			fmt.Printf("(couldn't open a browser automatically: %v — open the URL above)\n", err)
-		}
-	}
+	return s, ln, fmt.Sprintf("http://%s/?t=%s", s.addr, token), nil
+}
 
+// serve runs the HTTP server until the lifecycle watcher shuts it down.
+func (s *server) serve(ln net.Listener) error {
 	go s.watchLifecycle()
 
 	if err := s.httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

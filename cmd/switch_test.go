@@ -61,3 +61,37 @@ func TestRunSwitchSeedPushesWorkflowAndHeartbeat(t *testing.T) {
 		t.Errorf("heartbeat (last_checkin) not pushed to DMS remote: %v", err)
 	}
 }
+
+// offerDeleteLocalDMSKey removes the plaintext DMS key only on an explicit "y".
+func TestOfferDeleteLocalDMSKey(t *testing.T) {
+	env := testenv.New(t)
+	if err := os.MkdirAll(env.AppDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(env.AppDir, "dms-key")
+	writeKey := func() {
+		if err := os.WriteFile(keyPath, []byte("base64key\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeKey()
+	offerDeleteLocalDMSKey(bufio.NewReader(strings.NewReader("n\n")), env.AppDir)
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Fatal("answering 'n' must keep the local DMS key")
+	}
+
+	offerDeleteLocalDMSKey(bufio.NewReader(strings.NewReader("y\n")), env.AppDir)
+	if _, err := os.Stat(keyPath); !os.IsNotExist(err) {
+		t.Fatal("answering 'y' must remove the local DMS key")
+	}
+
+	// With no key present it must not prompt (a read here would hang forever).
+	offerDeleteLocalDMSKey(bufio.NewReader(strings.NewReader("")), env.AppDir)
+}
+
+func TestReadLineTrims(t *testing.T) {
+	if got := readLine(bufio.NewReader(strings.NewReader("  hello world \r\n"))); got != "hello world" {
+		t.Errorf("readLine = %q", got)
+	}
+}

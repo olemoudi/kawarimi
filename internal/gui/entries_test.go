@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,4 +139,60 @@ func TestEntriesRequireUnlocked(t *testing.T) {
 		t.Errorf("locked list: got %d, want 400", rec.Code)
 	}
 	_ = os.Getenv("HOME")
+}
+
+// The entries API must reject malformed writes with a 400 and a clear message,
+// never a 500 or a silent partial write.
+func TestEntriesValidationErrors(t *testing.T) {
+	h := newUnlockedServer(t).routes()
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   map[string]any
+		want   string
+	}{
+		{"note without title", "POST", "/api/entries",
+			map[string]any{"category": "notes", "content": "x"}, "title"},
+		{"credential without service", "POST", "/api/entries",
+			map[string]any{"category": "credentials", "title": "Bank",
+				"credential": map[string]any{"username": "u"}}, "service"},
+		{"unsupported category", "POST", "/api/entries",
+			map[string]any{"category": "documents", "title": "Doc"}, "CLI"},
+	}
+	for _, tc := range cases {
+		rec := call(h, tc.method, tc.path, tc.body)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400 (%s)", tc.name, rec.Code, rec.Body)
+			continue
+		}
+		if !strings.Contains(rec.Body.String(), tc.want) {
+			t.Errorf("%s: error %q should mention %q", tc.name, rec.Body.String(), tc.want)
+		}
+	}
+
+	// Update-specific validation: a credential update needs credential fields,
+	// and documents cannot be replaced through the GUI.
+	rec := call(h, "POST", "/api/entries", map[string]any{
+		"category": "credentials", "title": "Bank",
+		"credential": map[string]any{"service": "Bank", "username": "u", "password": "p"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create credential: %d (%s)", rec.Code, rec.Body)
+	}
+	var created entrySummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if rec := call(h, "PUT", "/api/entries/"+created.ID, map[string]any{
+		"category": "credentials",
+	}); rec.Code != http.StatusBadRequest {
+		t.Errorf("credential update without fields: got %d, want 400", rec.Code)
+	}
+	if rec := call(h, "PUT", "/api/entries/nonexistent", map[string]any{
+		"category": "notes", "content": "x",
+	}); rec.Code != http.StatusNotFound {
+		t.Errorf("update of a missing entry: got %d, want 404", rec.Code)
+	}
 }
