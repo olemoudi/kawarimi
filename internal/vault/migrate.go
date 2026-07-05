@@ -140,12 +140,3 @@ func cleanupRekey(paths []string) {
 		os.Remove(p)
 	}
 }
-
-// RecoveryCodeFromMasterKey decrypts the stored recovery code using the master key.
-func RecoveryCodeFromMasterKey(header *Header, masterKey []byte) ([]byte, error) {
-	ct, nonce, err := header.GetEncryptedRecoveryCode()
-	if err != nil {
-		return nil, err
-	}
-	return crypto.UnwrapKey(masterKey, ct, nonce)
-}

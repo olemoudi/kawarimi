@@ -41,13 +41,6 @@ func (ts *TelegramServer) Pings() []string {
 	return append([]string(nil), ts.pings...)
 }
 
-// PingCount returns how many messages the bot has sent.
-func (ts *TelegramServer) PingCount() int {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-	return len(ts.pings)
-}
-
 // ScriptAlive makes the next getUpdates return an "/alive" message from chatID.
 func (ts *TelegramServer) ScriptAlive(chatID string) {
 	ts.mu.Lock()
