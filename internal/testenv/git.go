@@ -1,12 +1,9 @@
 package testenv
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/olemoudi/kawarimi/internal/simenv"
 )
 
 // BareRepo creates an empty bare git repo (default branch main) and returns its
@@ -14,10 +11,7 @@ import (
 func BareRepo(t testing.TB) string {
 	t.Helper()
 	dir := t.TempDir()
-	if _, err := git.PlainInitWithOptions(dir, &git.PlainInitOptions{
-		Bare:        true,
-		InitOptions: git.InitOptions{DefaultBranch: plumbing.NewBranchReferenceName("main")},
-	}); err != nil {
+	if err := simenv.InitBareRepo(dir); err != nil {
 		t.Fatalf("init bare repo: %v", err)
 	}
 	return dir
@@ -27,16 +21,11 @@ func BareRepo(t testing.TB) string {
 // exists. Use it to assert the heartbeat/workflow actually landed on the remote.
 func RepoFile(t testing.TB, bareRepo, name string) (string, bool) {
 	t.Helper()
-	work := t.TempDir()
-	if _, err := git.PlainClone(work, false, &git.CloneOptions{URL: bareRepo}); err != nil {
-		// An empty remote (nothing pushed yet) has no files.
-		return "", false
-	}
-	data, err := os.ReadFile(filepath.Join(work, name))
+	content, ok, err := simenv.RepoFile(bareRepo, name)
 	if err != nil {
-		return "", false
+		t.Fatalf("reading %s from bare repo: %v", name, err)
 	}
-	return string(data), true
+	return content, ok
 }
 
 // RepoHasFile reports whether name exists on the bare repo's main branch.
