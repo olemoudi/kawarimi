@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"archive/zip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -101,5 +102,42 @@ func TestNearbyPayloadExists(t *testing.T) {
 	}
 	if !nearbyPayloadExists() {
 		t.Fatal("a sealed payload in cwd must be detected")
+	}
+}
+
+// An UNEXTRACTED package zip next to the binary must count as a nearby payload —
+// otherwise a recipient double-click falls through to the owner setup wizard.
+func TestNearbyPayloadExistsWithPackageZip(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	// An unrelated zip must not trigger recipient mode.
+	writeTestZip(t, filepath.Join(dir, "holiday-photos.zip"), "photos/img.jpg")
+	if nearbyPayloadExists() {
+		t.Fatal("an unrelated zip must not count as a package")
+	}
+
+	writeTestZip(t, filepath.Join(dir, "kawarimi-vault.zip"), "vault/sealed_payload.age")
+	if !nearbyPayloadExists() {
+		t.Fatal("an unextracted package zip in cwd must be detected")
+	}
+}
+
+// writeTestZip creates a zip at path with the given (empty) entries.
+func writeTestZip(t *testing.T, path string, entries ...string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	w := zip.NewWriter(f)
+	for _, name := range entries {
+		if _, err := w.Create(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

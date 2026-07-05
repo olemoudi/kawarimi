@@ -352,17 +352,12 @@ func (v *Vault) Verify() []error {
 	return errs
 }
 
-// Export decrypts the entire vault to the given output directory.
+// Export decrypts the entire vault to the given output directory. Category
+// directories are created only for entries that exist — an empty folder is just
+// noise for the recipient browsing the output.
 func (v *Vault) Export(outputDir string) error {
-	dirs := []string{
-		filepath.Join(outputDir, string(CategoryNotes)),
-		filepath.Join(outputDir, string(CategoryCredentials)),
-		filepath.Join(outputDir, string(CategoryDocuments)),
-	}
-	for _, d := range dirs {
-		if err := os.MkdirAll(d, 0700); err != nil {
-			return fmt.Errorf("creating output directory %s: %w", d, err)
-		}
+	if err := os.MkdirAll(outputDir, 0700); err != nil {
+		return fmt.Errorf("creating output directory %s: %w", outputDir, err)
 	}
 
 	absOutputDir, err := filepath.Abs(outputDir)
@@ -392,6 +387,9 @@ func (v *Vault) Export(outputDir string) error {
 			return fmt.Errorf("path traversal detected in entry filename: %s", entry.Filename)
 		}
 
+		if err := os.MkdirAll(filepath.Dir(outPath), 0700); err != nil {
+			return fmt.Errorf("creating output directory for %s: %w", outName, err)
+		}
 		if err := os.WriteFile(outPath, data, 0600); err != nil {
 			return fmt.Errorf("writing %s: %w", outPath, err)
 		}

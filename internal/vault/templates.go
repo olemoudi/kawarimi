@@ -28,18 +28,21 @@ func contentTypeFromExt(ext string) string {
 	}
 }
 
+// generateIndex renders INDEX.md — the first thing a recipient is told to open.
+// Headers are bilingual because the reader's language is unknown at export time
+// (the same path serves the owner CLI and the recipient wizard in either language).
 func generateIndex(m *Manifest) string {
 	var sb strings.Builder
-	sb.WriteString("# Vault Contents\n\n")
-	sb.WriteString(fmt.Sprintf("Exported on: %s\n\n", NowUTC()))
+	sb.WriteString("# Contenido de la caja fuerte / Vault contents\n\n")
+	sb.WriteString(fmt.Sprintf("Exportado el / Exported on: %s\n\n", NowUTC()))
 
 	categories := []struct {
 		cat   Category
 		title string
 	}{
-		{CategoryNotes, "Notes"},
-		{CategoryCredentials, "Credentials"},
-		{CategoryDocuments, "Documents"},
+		{CategoryNotes, "Notas / Notes"},
+		{CategoryCredentials, "Credenciales / Credentials"},
+		{CategoryDocuments, "Documentos / Documents"},
 	}
 
 	for _, c := range categories {
@@ -58,7 +61,7 @@ func generateIndex(m *Manifest) string {
 			if e.Description != "" {
 				sb.WriteString(fmt.Sprintf(" — %s", e.Description))
 			}
-			sb.WriteString(fmt.Sprintf("\n   File: %s\n\n", filepath.Base(displayFile)))
+			sb.WriteString(fmt.Sprintf("\n   Archivo / File: %s\n\n", filepath.Base(displayFile)))
 		}
 	}
 

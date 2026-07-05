@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/vault"
@@ -263,5 +264,69 @@ func TestBuildPackageNoVault(t *testing.T) {
 	err := vault.BuildPackage("/nonexistent/vault", outputPath, "")
 	if err == nil {
 		t.Fatal("expected error for missing vault")
+	}
+}
+
+// writeZip creates a zip at path containing the given entry names (empty content).
+func writeZip(t *testing.T, path string, entries ...string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	w := zip.NewWriter(f)
+	for _, name := range entries {
+		if _, err := w.Create(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// FindPackageZip must only match zips that really are kawarimi packages (central
+// directory lists vault/sealed_payload.age) and pick the newest when several match
+// — a recipient's Downloads folder is full of unrelated zips.
+func TestFindPackageZip(t *testing.T) {
+	dir := t.TempDir()
+
+	if got := vault.FindPackageZip(dir); got != "" {
+		t.Errorf("empty dir: got %q, want \"\"", got)
+	}
+
+	writeZip(t, filepath.Join(dir, "aaa-photos.zip"), "photos/img.jpg")
+	if got := vault.FindPackageZip(dir); got != "" {
+		t.Errorf("decoy zip only: got %q, want \"\"", got)
+	}
+
+	oldPkg := filepath.Join(dir, "bbb-vault-old.zip")
+	writeZip(t, oldPkg, "INSTRUCTIONS.md", "vault/sealed_payload.age", "vault/vault_header.json")
+	if got := vault.FindPackageZip(dir); got != oldPkg {
+		t.Errorf("single package: got %q, want %q", got, oldPkg)
+	}
+
+	// A second, newer package wins regardless of name order.
+	newPkg := filepath.Join(dir, "aaa-vault-new.zip")
+	writeZip(t, newPkg, "vault/sealed_payload.age")
+	past := time.Now().Add(-24 * time.Hour)
+	if err := os.Chtimes(oldPkg, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if got := vault.FindPackageZip(dir); got != newPkg {
+		t.Errorf("two packages: got %q, want newest %q", got, newPkg)
+	}
+
+	// A corrupt zip is skipped, not fatal.
+	if err := os.WriteFile(filepath.Join(dir, "zzz-corrupt.zip"), []byte("not a zip"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if got := vault.FindPackageZip(dir); got != newPkg {
+		t.Errorf("with corrupt zip present: got %q, want %q", got, newPkg)
+	}
+
+	if got := vault.FindPackageZip(filepath.Join(dir, "missing")); got != "" {
+		t.Errorf("missing dir: got %q, want \"\"", got)
 	}
 }

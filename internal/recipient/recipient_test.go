@@ -88,6 +88,9 @@ func TestRunOpensPackageZip(t *testing.T) {
 	if !strings.Contains(out.String(), "Listo.") {
 		t.Errorf("expected Spanish success message, got:\n%s", out.String())
 	}
+	if !strings.Contains(out.String(), "puede tardar") {
+		t.Errorf("expected the Spanish patience note before unsealing, got:\n%s", out.String())
+	}
 }
 
 // TestRunOpensExtractedVaultDir opens an already-extracted vault directory (no zip)
@@ -110,6 +113,9 @@ func TestRunOpensExtractedVaultDir(t *testing.T) {
 	if !strings.Contains(out.String(), "Done.") {
 		t.Errorf("expected English success message, got:\n%s", out.String())
 	}
+	if !strings.Contains(out.String(), "can take a minute") {
+		t.Errorf("expected the English patience note before unsealing, got:\n%s", out.String())
+	}
 }
 
 // TestRunNoVault reports a friendly error when there is nothing to open.
@@ -121,5 +127,93 @@ func TestRunNoVault(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Could not find a vault") {
 		t.Errorf("expected the no-vault message, got:\n%s", out.String())
+	}
+}
+
+// A mistyped/garbled key must not spend real attempts — only full unlock failures
+// count. Six garbage keys would have exhausted the old 5-attempt budget.
+func TestRunMalformedKeyDoesNotBurnAttempts(t *testing.T) {
+	dir, dmsKeyB64, passphrase := buildV4Package(t)
+
+	input := strings.Join([]string{
+		"nope", "still nope", "x", "????", "not-a-key", "garbage!",
+		dmsKeyB64,
+		passphrase,
+	}, "\n") + "\n"
+
+	var out bytes.Buffer
+	if err := recipient.Run(recipient.Options{In: strings.NewReader(input), Out: &out, StartDir: dir, Lang: "en"}); err != nil {
+		t.Fatalf("Run: %v\noutput:\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Done.") {
+		t.Errorf("expected success, got:\n%s", out.String())
+	}
+}
+
+// After a failed attempt, pressing Enter at the key prompt reuses the previously
+// accepted key — recipients should not have to dig the email out again.
+func TestRunReusesLastKeyOnEnter(t *testing.T) {
+	dir, dmsKeyB64, passphrase := buildV4Package(t)
+
+	input := strings.Join([]string{
+		dmsKeyB64,
+		"abandon abandon abandon abandon abandon abandon", // wrong words: attempt 1 fails
+		"", // blank line: reuse the same key
+		passphrase,
+	}, "\n") + "\n"
+
+	var out bytes.Buffer
+	if err := recipient.Run(recipient.Options{In: strings.NewReader(input), Out: &out, StartDir: dir, Lang: "en"}); err != nil {
+		t.Fatalf("Run: %v\noutput:\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Press Enter to use the same key") {
+		t.Errorf("expected the key-reuse prompt, got:\n%s", out.String())
+	}
+}
+
+// Failed attempts must tell the recipient how many tries remain.
+func TestRunShowsAttemptsRemaining(t *testing.T) {
+	dir, dmsKeyB64, _ := buildV4Package(t)
+
+	wrong := "abandon abandon abandon abandon abandon abandon"
+	input := dmsKeyB64 + "\n" + wrong + "\n" + // attempt 1 → 4 left
+		"\n" + wrong + "\n" // reuse key, attempt 2 → 3 left, then EOF aborts
+
+	var out bytes.Buffer
+	err := recipient.Run(recipient.Options{In: strings.NewReader(input), Out: &out, StartDir: dir, Lang: "en"})
+	if err == nil {
+		t.Fatal("expected failure after aborted input")
+	}
+	if !strings.Contains(out.String(), "You have 4 tries left") ||
+		!strings.Contains(out.String(), "You have 3 tries left") {
+		t.Errorf("expected attempts-remaining countdown, got:\n%s", out.String())
+	}
+}
+
+// panicOnceWriter panics on its first write and behaves afterwards, simulating a
+// mid-wizard crash while still letting the crash guard print its message.
+type panicOnceWriter struct {
+	bytes.Buffer
+	fired bool
+}
+
+func (w *panicOnceWriter) Write(p []byte) (int, error) {
+	if !w.fired {
+		w.fired = true
+		panic("simulated crash")
+	}
+	return w.Buffer.Write(p)
+}
+
+// A panic must never escape Run: on Windows the console would vanish before the
+// recipient can read anything. The guard explains the crash instead.
+func TestRunRecoversFromPanic(t *testing.T) {
+	w := &panicOnceWriter{}
+	err := recipient.Run(recipient.Options{In: strings.NewReader(""), Out: w, StartDir: t.TempDir(), Lang: "en"})
+	if err == nil || !strings.Contains(err.Error(), "crashed") {
+		t.Fatalf("expected a crash error, got %v", err)
+	}
+	if !strings.Contains(w.String(), "Something went wrong") {
+		t.Errorf("expected the crash explanation, got:\n%s", w.String())
 	}
 }

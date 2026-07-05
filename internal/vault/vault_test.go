@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/olemoudi/kawarimi/internal/crypto"
@@ -381,5 +382,51 @@ func TestPersistenceAcrossOpenClose(t *testing.T) {
 	}
 	if string(data) != "should survive" {
 		t.Fatalf("content: got %q", data)
+	}
+}
+
+// Export must not create empty category folders — a recipient with only notes
+// should not wonder what "credentials" and "documents" were supposed to hold.
+func TestExportSkipsEmptyCategoryDirs(t *testing.T) {
+	v := createTestVault(t)
+	if _, err := v.AddNote("Bank", []byte("acct 42"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "decrypted")
+	if err := v.Export(out); err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(out, "notes")); err != nil {
+		t.Errorf("notes dir must exist: %v", err)
+	}
+	for _, empty := range []string{"credentials", "documents"} {
+		if _, err := os.Stat(filepath.Join(out, empty)); !os.IsNotExist(err) {
+			t.Errorf("empty category dir %q must not be created", empty)
+		}
+	}
+}
+
+// INDEX.md is the recipient's entry point and their language is unknown at export
+// time, so its headers are bilingual.
+func TestExportIndexBilingual(t *testing.T) {
+	v := createTestVault(t)
+	if _, err := v.AddNote("Bank", []byte("acct 42"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "decrypted")
+	if err := v.Export(out); err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	index, err := os.ReadFile(filepath.Join(out, "INDEX.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Contenido de la caja fuerte", "Vault contents", "Exportado el", "Exported on", "Notas / Notes"} {
+		if !strings.Contains(string(index), want) {
+			t.Errorf("INDEX.md missing %q:\n%s", want, index)
+		}
 	}
 }

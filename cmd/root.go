@@ -119,6 +119,13 @@ func hasNearbySealedPayload(cwd, exeDir string) bool {
 				return true
 			}
 		}
+		// A not-yet-extracted package counts too: the wizard extracts it itself,
+		// and without this a double-click next to the downloaded zip would fall
+		// through to the OWNER first-run setup — the worst possible wizard for a
+		// recipient.
+		if vault.FindPackageZip(base) != "" {
+			return true
+		}
 	}
 	return false
 }

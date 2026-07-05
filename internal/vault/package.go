@@ -88,6 +88,54 @@ func BuildPackage(vaultDir string, outputPath string, binariesDir string) error 
 	return nil
 }
 
+// FindPackageZip returns the path of a kawarimi package zip in dir, or "" if none.
+// A zip qualifies only if its central directory lists vault/sealed_payload.age —
+// so a Downloads folder full of unrelated zips never misroutes the recipient
+// wizard. If several packages match, the newest by mtime wins (the release email
+// tells recipients to always use the most recent package).
+func FindPackageZip(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	best := ""
+	var bestTime time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".zip") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		if !zipContainsSealedPayload(path) {
+			continue
+		}
+		info, ierr := e.Info()
+		if ierr != nil {
+			continue
+		}
+		if best == "" || info.ModTime().After(bestTime) {
+			best, bestTime = path, info.ModTime()
+		}
+	}
+	return best
+}
+
+// zipContainsSealedPayload reports whether the zip's central directory lists the
+// packaged sealed payload. It reads only the directory, not the file contents.
+func zipContainsSealedPayload(path string) bool {
+	r, err := zip.OpenReader(path)
+	if err != nil {
+		return false
+	}
+	defer r.Close()
+	want := PackageVaultDir + "/" + SealedPayloadFile
+	for _, f := range r.File {
+		if f.Name == want {
+			return true
+		}
+	}
+	return false
+}
+
 // ExtractPackage extracts a vault package zip to the given directory.
 // Returns the path to the vault directory within the extracted contents.
 func ExtractPackage(packagePath string, destDir string) (string, error) {

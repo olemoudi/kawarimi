@@ -34,7 +34,9 @@ type Options struct {
 }
 
 // Run walks the recipient through locating, unlocking, and decrypting the vault.
-func Run(opts Options) error {
+// A panic never escapes: on Windows the console window would close before the
+// recipient could read anything, so a crash is explained and paused instead.
+func Run(opts Options) (err error) {
 	in := opts.In
 	if in == nil {
 		in = os.Stdin
@@ -43,17 +45,34 @@ func Run(opts Options) error {
 	if out == nil {
 		out = os.Stdout
 	}
+	reader := bufio.NewReader(in)
+
+	m := messagesFor("es") // default until the language is chosen
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(out, m.crashed, r)
+			pauseOnWindows(reader, out, m)
+			err = fmt.Errorf("recipient wizard crashed: %v", r)
+		}
+	}()
+
+	return run(opts, reader, out, &m)
+}
+
+// run is the wizard body; Run wraps it with the crash guard. It updates *m as soon
+// as the language is known so the guard speaks the chosen language.
+func run(opts Options, reader *bufio.Reader, out io.Writer, mp *messages) error {
 	startDir := opts.StartDir
 	if startDir == "" {
 		startDir, _ = os.Getwd()
 	}
-	reader := bufio.NewReader(in)
 
 	lang := normalizeLang(opts.Lang)
 	if lang == "" {
 		lang = chooseLanguage(reader, out)
 	}
-	m := messagesFor(lang)
+	*mp = messagesFor(lang)
+	m := *mp
 
 	// Search the working directory AND the executable's directory: on macOS a
 	// double-clicked binary runs with cwd = $HOME while the extracted package sits
@@ -95,26 +114,31 @@ func Run(opts Options) error {
 		absOut = outputDir
 	}
 	fmt.Fprintf(out, m.success, absOut)
-	openInFileViewer(filepath.Join(outputDir, "INDEX.md"))
+	// Open the folder, not INDEX.md: .md file associations are unreliable (an
+	// "open with?" dialog would be the recipient's very first post-decrypt
+	// experience), while a folder reliably opens in Finder/Explorer/etc.
+	openInFileViewer(outputDir)
 	pauseOnWindows(reader, out, m)
 	return nil
 }
 
 // unlockWithRetries reads the key and passphrase and tries to open the vault, up to
-// maxUnlockAttempts times. A malformed key just costs an attempt (with a hint); the
-// passphrase is normalized inside vault.OpenSealedV4.
+// maxUnlockAttempts times. A malformed key is re-prompted without spending an
+// attempt, a previously accepted key can be reused by just pressing Enter, and the
+// tries remaining are shown after each failure. The passphrase is normalized inside
+// vault.OpenSealedV4.
 func unlockWithRetries(reader *bufio.Reader, out io.Writer, m messages, vaultDir string) (*vault.Vault, error) {
+	var lastKey []byte
+	defer func() { crypto.ZeroBytes(lastKey) }()
+
 	for attempt := 1; attempt <= maxUnlockAttempts; attempt++ {
-		fmt.Fprint(out, m.promptKey)
-		keyLine, err := readLine(reader)
+		dmsKey, err := promptKey(reader, out, m, lastKey)
 		if err != nil {
 			return nil, errAborted
 		}
-		dmsKey, derr := crypto.DecodeDMSKeyLenient(keyLine)
-		if derr != nil {
-			fmt.Fprintln(out, m.badKey)
-			continue
-		}
+		// Remember the accepted key so the next attempt can reuse it with Enter.
+		crypto.ZeroBytes(lastKey)
+		lastKey = append([]byte(nil), dmsKey...)
 
 		fmt.Fprint(out, m.promptPass)
 		passLine, err := readLine(reader)
@@ -130,10 +154,35 @@ func unlockWithRetries(reader *bufio.Reader, out io.Writer, m messages, vaultDir
 			return v, nil
 		}
 		if attempt < maxUnlockAttempts {
-			fmt.Fprintln(out, m.tryAgain)
+			fmt.Fprintf(out, m.tryAgain+"\n", maxUnlockAttempts-attempt)
 		}
 	}
 	return nil, fmt.Errorf("could not unlock the vault after %d attempts", maxUnlockAttempts)
+}
+
+// promptKey reads key lines until one decodes, telling the user what a bad paste
+// looks like each time — a typo here should never cost one of the real attempts.
+// When a previous attempt already accepted a key, an empty line reuses it.
+func promptKey(reader *bufio.Reader, out io.Writer, m messages, lastKey []byte) ([]byte, error) {
+	prompt := m.promptKey
+	if lastKey != nil {
+		prompt = m.promptKeyAgain
+	}
+	for {
+		fmt.Fprint(out, prompt)
+		line, err := readLine(reader)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(line) == "" && lastKey != nil {
+			return append([]byte(nil), lastKey...), nil
+		}
+		key, derr := crypto.DecodeDMSKeyLenient(line)
+		if derr == nil {
+			return key, nil
+		}
+		fmt.Fprintln(out, m.badKey)
+	}
 }
 
 // locateVault finds the vault directory across the given search dirs, extracting a
@@ -151,7 +200,7 @@ func locateVault(searchDirs []string) (dir, baseDir string, cleanup func(), err 
 		if hasHeader(d) {
 			return d, d, nil, nil
 		}
-		if zipPath := findPackageZip(d); zipPath != "" {
+		if zipPath := vault.FindPackageZip(d); zipPath != "" {
 			tmp, terr := os.MkdirTemp("", "kawarimi-open-")
 			if terr != nil {
 				return "", "", nil, terr
@@ -189,19 +238,6 @@ func availableMemoryMiB() int64 {
 		}
 	}
 	return -1
-}
-
-func findPackageZip(dir string) string {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return ""
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".zip") {
-			return filepath.Join(dir, e.Name())
-		}
-	}
-	return ""
 }
 
 func chooseLanguage(reader *bufio.Reader, out io.Writer) string {
@@ -257,7 +293,7 @@ func warnIfLowMemory(out io.Writer, m messages) {
 	}
 }
 
-// openInFileViewer best-effort opens the decrypted index in the OS file viewer.
+// openInFileViewer best-effort opens the decrypted folder in the OS file viewer.
 func openInFileViewer(path string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
