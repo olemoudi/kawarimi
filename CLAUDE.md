@@ -252,10 +252,12 @@ mermaid usage-flow diagram. Keep them current:
 - Commit and push all changes after finishing implementing something worth a commit message.
 - **Monitor CI after every push.** The suite runs on ubuntu, windows, and macos —
   a locally-green run is not proof. After pushing, watch the GitHub Actions run
-  for the pushed commit (`gh run list --commit <sha>` then `gh run watch <id>`,
-  or `gh run watch` the newest run) until it completes; if it fails, fetch the
-  failing job's log (`gh run view <id> --log-failed`), diagnose, and fix before
-  moving on to other work.
+  for the pushed commit until it completes; if it fails, fetch the failing job's
+  log, diagnose, and fix before moving on to other work. With the `gh` CLI:
+  `gh run list --commit <sha>`, `gh run watch <id>`, `gh run view <id>
+  --log-failed`. Without it, poll the public API:
+  `https://api.github.com/repos/olemoudi/kawarimi/actions/runs?head_sha=<sha>`
+  (status/conclusion per run; job logs are linked from each run object).
 
 ## Application Security
 
