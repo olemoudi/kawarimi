@@ -533,8 +533,11 @@ Three kinds of migration keep an install current:
   self-contained badge SVG, and force-pushes it to the `badges` branch (no
   external coverage service); the READMEs embed it from raw.githubusercontent.
   The generated DMS workflow's bash is itself executed in tests by a mini Actions
-  runner in `internal/testenv` (parse steps, resolve secrets, evaluate `if:`
-  guards, shim `curl`), so the release decision logic is covered end to end; only
+  runner in `internal/simenv` (parse steps, resolve secrets, evaluate `if:`
+  guards, shim `curl`), so the release decision logic is covered end to end, and
+  the embedded SPA's JavaScript is executed by a browser smoke suite (headless
+  Chromium via chromedp, gated on an installed browser; ubuntu runners have one)
+  that fails on any uncaught exception or console.error across every view; only
   GitHub's scheduler is outside `go test`.
 - **Releases** ([`.github/workflows/release.yml`](.github/workflows/release.yml)):
   pushing a `v*` tag runs goreleaser and publishes a **draft** GitHub release

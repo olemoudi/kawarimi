@@ -199,6 +199,17 @@ possibly years later — so testing is not negotiable. Do not spare on it.
   switch, the key-split, the release paths, or the setup/GUI flow, add or update a
   scenario there — a change to disclosure behavior without a lifecycle test is a
   bug in the change.
+- **The GUI's JavaScript DOES run in tests.** The browser smoke suite
+  (`internal/gui/browser_smoke_test.go`) drives every SPA view — wizard, unlock,
+  dashboard, entries, and the demo theater at pristine day 0 — in a real headless
+  Chromium via chromedp, failing on ANY uncaught exception or `console.error`.
+  It is gated on an installed browser (`testenv.RequireBrowser`; `KAWARIMI_CHROME`
+  overrides discovery) the same way the workflow runner is gated on linux+bash;
+  GitHub's ubuntu runners ship Chrome, so CI executes it. Source-pinning tests
+  (i18n parity, print isolation) cannot see runtime JS errors — when you add or
+  change a view, add a smoke that loads its empty/initial state. Relatedly,
+  `TestAPIResponsesMarshalListsAsArrays` pins that freshly-constructed API
+  responses never marshal list fields as JSON `null` (the SPA iterates them).
 - **The generated workflow's bash DOES run in tests.** `testenv.RunDMSWorkflow` is
   a mini Actions runner: it parses the generated `deadman.yml`, resolves
   `${{ secrets.* }}`, evaluates the `if:` guards, and executes each `run:` script
