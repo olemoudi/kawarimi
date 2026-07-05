@@ -48,6 +48,20 @@ este proyecto), así que la primera ejecución requiere un paso extra:
 Integridad: cada versión incluye un `checksums.txt`; verifícalo con
 `sha256sum -c checksums.txt --ignore-missing`.
 
+## Pruébalo primero: la demo
+
+```sh
+kawarimi demo
+```
+
+abre en tu navegador un **teatro del ciclo de vida** en un entorno de pruebas:
+una caja fuerte desechable con el interruptor armado donde los días pasan al
+hacer clic, no con el calendario. Mira cómo escalan los avisos, responde
+`/alive` desde el móvil simulado, observa cómo se dispara el correo de entrega
+y abre la caja fuerte como lo haría el destinatario — todo con correo, Telegram
+y GitHub simulados. No se contacta con nada real y tu caja fuerte real (si la
+tienes) queda intacta.
+
 ## Primeros pasos (titular)
 
 Ejecuta el programa que descargaste. En un equipo nuevo abre el **asistente de

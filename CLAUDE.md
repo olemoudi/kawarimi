@@ -184,7 +184,10 @@ possibly years later — so testing is not negotiable. Do not spare on it.
   (`IMAPServer`, trusted via `KAWARIMI_IMAP_CA`), a local bare git repo standing
   in for the cloud DMS repo (`BareRepo`), and a mini Actions runner for the
   generated workflow (`RunDMSWorkflow`). Reuse and extend it — do not spin up ad
-  hoc servers per test. New integration seams to an external service should honor a
+  hoc servers per test. The actor implementations live in `internal/simenv` (a
+  non-test package with error-returning constructors, also powering `kawarimi
+  demo`); testenv is thin `testing.TB` wrappers over it — put new mock behavior
+  in simenv, new test conveniences in testenv. New integration seams to an external service should honor a
   test override (e.g. an env-var base URL like `KAWARIMI_GITHUB_API` /
   `KAWARIMI_TELEGRAM_API`, or a CA override like `KAWARIMI_IMAP_CA`) so the
   harness can redirect them.

@@ -45,6 +45,19 @@ project), so the first launch needs one extra step:
 Integrity: every release ships a `checksums.txt`; verify with
 `sha256sum -c checksums.txt --ignore-missing`.
 
+## Try it first: the demo
+
+```sh
+kawarimi demo
+```
+
+opens a sandboxed **lifecycle theater** in your browser: a throwaway vault with
+an armed switch where days pass on click, not on the calendar. Watch the
+warnings escalate, reply `/alive` from the simulated phone, see the release
+email fire, and open the vault as the recipient — all with mock email, mock
+Telegram, and mock GitHub. Nothing real is contacted, and your real vault (if
+any) is untouched.
+
 ## Getting started (owner)
 
 Run the program you downloaded. On a fresh machine it opens the **setup

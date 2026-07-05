@@ -76,6 +76,8 @@ so double-clicking the binary inside an extracted package "just works".
 | `internal/config/` | Non-sensitive JSON config at `~/.kawarimi/config.json`; derives app-dir and DMS-clone paths |
 | `internal/recipient/` | The bilingual, plain-stdin recipient wizard |
 | `internal/copytext/` | Centralized bilingual copy (package instructions, release email body) — single source of truth |
+| `internal/simenv/` | In-process simulations of every external actor (SMTP, Telegram, GitHub API, the cloud DMS git repo, the Actions workflow runner) — no testing imports; `internal/testenv` wraps these for tests, `kawarimi demo` runs them live |
+| `internal/demo/` | The sandboxed demo world behind `kawarimi demo`: seeds a real vault + armed switch in a temp HOME against simenv actors, and drives the story (time travel by heartbeat backdating, both release engines) |
 
 `internal/*` is deliberately not importable from outside the module.
 
@@ -431,6 +433,33 @@ mode the local `dms-key` is deleted once the GitHub secret is set.
   it exits on idle (deferred while any request is in flight, so a long package build
   is never killed mid-way), on `Quit`, or on Ctrl-C.
 
+### Demo mode (`kawarimi demo`)
+
+`kawarimi demo` ([`cmd/demo.go`](cmd/demo.go)) is the **lifecycle theater**: it
+builds a sandboxed world ([`internal/demo`](internal/demo/)) — a real fast-KDF
+vault with sample entries, a real armed switch seeded via the real `SeedSwitch`
+against an in-process GitHub mock plus a local bare git repo, mock SMTP and
+Telegram from [`internal/simenv`](internal/simenv/) — then launches this same GUI
+server with `Options.Demo` set. The SPA renders a four-column stage (owner /
+cloud / inboxes / recipient) plus time-travel controls. Key properties:
+
+- **A separate process with a temp HOME.** `demo.NewWorld` repoints
+  `HOME`/`USERPROFILE` at a throwaway dir before the server starts; because
+  config/deadswitch resolve HOME per call, a real vault on the machine is
+  untouched. The sandbox is deleted on exit.
+- **Time travel = heartbeat backdating**, through the real
+  `deadswitch.RecordCheckin`; there is deliberately **no fast-clock mode in the
+  production switch**. Each advanced day runs the REAL automation: the generated
+  `deadman.yml` under the mini Actions runner (Linux; the `cloud` engine) and the
+  local `deadswitch.Evaluate` tick (all platforms; the sole engine elsewhere).
+- **Demo endpoints** (`/api/demo/state|advance|checkin|telegram-alive|`
+  `recipient-open|reset`, [`internal/gui/api_demo.go`](internal/gui/api_demo.go))
+  are registered **only** when launched via `kawarimi demo` and sit behind the
+  same session cookie as everything else.
+- The recipient beat extracts the real package zip and opens it with
+  `vault.OpenSealedV4` — the same path the recipient wizard uses. The demo is an
+  owner-side command; the recipient path gains no code and no network from it.
+
 ---
 
 ## 12. Versioned evolution
@@ -624,6 +653,7 @@ the same commit (the CLAUDE.md "Documentation" rule enforces this):
 | device enrollment | §8 |
 | on-disk files / the two-repo split | §5, §9 |
 | the browser GUI (server, security, or an API endpoint) | §11 |
+| demo mode or the simenv actors | §3, §11 |
 | a payload prefix / a new generation | §12 |
 | the self-updater, a vault/config format bump, or the workflow version | §12 (Updates & migrations) |
 | build, CI, or release config | §13 |

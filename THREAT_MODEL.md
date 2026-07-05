@@ -185,6 +185,12 @@ Decisions that exist *because of* this threat model, with their rationale:
    `internal/gui/printcard_test.go`.
 10. **Atomic writes + self-healing header backups.** Durability is a security
     property here: a bricked header equals losing the estate.
+11. **Demo mode adds no real attack surface.** `kawarimi demo` is an owner-side
+    subcommand running a loopback, token-gated server like the GUI; every actor
+    is an in-process mock, all "secrets" are generated per run inside a temp
+    HOME with test-grade KDF and are worthless outside it, the mock-API env
+    overrides live only in the demo process, and **the recipient path gains no
+    network calls** — the recipient binary and wizard are untouched.
 
 ## 7. Caveats and accepted risks
 
@@ -252,4 +258,5 @@ is incomplete.
 | The key-split, sealing, or a release path | §1, §2, §4, §5, §6 |
 | Secrets stored in GitHub / a new external service | §1, §4, §7 |
 | A new network-facing surface (GUI endpoint, channel) | §4, §6 |
+| Demo mode / the simenv actors | §6.11 |
 | A security invariant test | §8 |

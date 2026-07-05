@@ -217,6 +217,58 @@ const I18N = {
     wDoneSub: "Your vault is created and the cloud dead man's switch is armed. Add entries and check in from the dashboard. Remember to hand each recipient their card and to upload the package to its location.",
     goDashboard: "Go to dashboard",
 
+    navDemo: "Demo",
+    demoBanner: "DEMO — a sandbox story. Nothing is real: mock email, mock GitHub, throwaway vault. Time only moves when you advance it.",
+    demoDay: "Day {0}",
+    demoEngineCloud: "cloud engine — every advanced day runs the REAL generated deadman.yml under bash",
+    demoEngineLocal: "local engine — every advanced day runs the built-in daily evaluator",
+    demoAdvance1: "+1 day",
+    demoAdvance7: "+7 days",
+    demoPlay: "▶ Autoplay",
+    demoPause: "❚❚ Pause",
+    demoResetBtn: "Restart demo",
+    demoResetConfirm: "Restart the demo with a fresh vault and new secrets?",
+    demoColOwner: "The owner",
+    demoColCloud: "The cloud (GitHub)",
+    demoColMail: "The inboxes",
+    demoColRecipient: "The recipient",
+    demoCardTitle: "The physical card",
+    demoCardHint: "Printed at setup and handed to the recipient — shown here so you can play both roles.",
+    demoPhone: "The owner's phone (Telegram)",
+    demoPhoneEmpty: "No messages from the bot yet.",
+    demoAliveBtn: "Reply /alive",
+    demoAliveQueued: "Reply sent — the next day's check will count it as proof of life.",
+    demoRepo: "Private repo",
+    demoHeartbeat: "Cloud heartbeat",
+    demoWorkflowOn: "workflow armed",
+    demoCronTitle: "Daily automation runs",
+    demoCronEmpty: "No runs yet — advance a day.",
+    demoCronQuiet: "days {0}–{1}: quiet",
+    demoCronQuiet1: "day {0}: quiet",
+    demoCronRun: "day {0}: status {1}, {2} days silent, {3} email(s)",
+    demoInboxEmpty: "(empty)",
+    demoMailRelease: "RELEASE",
+    demoCopyKey: "Copy the KEY",
+    demoRecipLocked: "Nothing here yet. The recipient lives their life — until the release email arrives.",
+    demoRecipIntro: "The release email has arrived. Open the vault exactly as the recipient would: the KEY from the email + the WORDS from the card.",
+    demoRecipKey: "KEY (from the email)",
+    demoRecipKeyPh: "paste the key here",
+    demoRecipWords: "WORDS (from the card)",
+    demoRecipWordsPh: "type the six words",
+    demoRecipOpen: "Open the vault",
+    demoRecipOpenedTitle: "The vault is open",
+    demoRecipFiles: "Decrypted files",
+    demoEvArmed: "day {0}: vault created, switch armed in the cloud",
+    demoEvPackaged: "day {0}: package built and shared with the recipient",
+    demoEvCheckin: "check-in — the clock rewinds to day 0",
+    demoEvCheckinTg: "Telegram /alive — auto check-in, clock back to day 0",
+    demoEvWarned: "day {0}: first warning to the owner",
+    demoEvReleased: "day {0}: the KEY was emailed to the recipient",
+    demoEvOpened: "the recipient opened the vault",
+    demoEvReset: "demo restarted",
+    demoEventsTitle: "Story log",
+    wizDemoHint: "Just exploring? Run  kawarimi demo  in a terminal for a sandboxed walkthrough of the whole lifecycle.",
+
     updateAvailable: "Update available: v{0}",
     updateNow: "Update now",
     whatsNew: "What's new",
@@ -391,6 +443,58 @@ const I18N = {
     wDoneSub: "Tu caja fuerte está creada y el interruptor de la nube está armado. Añade contenido y da señales de vida desde el panel. Recuerda entregar a cada destinatario su tarjeta y subir el paquete a su ubicación.",
     goDashboard: "Ir al panel",
 
+    navDemo: "Demo",
+    demoBanner: "DEMO — una historia de prueba. Nada es real: correo simulado, GitHub simulado, caja fuerte desechable. El tiempo solo avanza cuando tú lo avanzas.",
+    demoDay: "Día {0}",
+    demoEngineCloud: "motor nube — cada día avanzado ejecuta el deadman.yml REAL generado, bajo bash",
+    demoEngineLocal: "motor local — cada día avanzado ejecuta el evaluador diario integrado",
+    demoAdvance1: "+1 día",
+    demoAdvance7: "+7 días",
+    demoPlay: "▶ Reproducir",
+    demoPause: "❚❚ Pausar",
+    demoResetBtn: "Reiniciar demo",
+    demoResetConfirm: "¿Reiniciar la demo con una caja fuerte y secretos nuevos?",
+    demoColOwner: "El titular",
+    demoColCloud: "La nube (GitHub)",
+    demoColMail: "Los buzones",
+    demoColRecipient: "El destinatario",
+    demoCardTitle: "La tarjeta física",
+    demoCardHint: "Impresa al configurar y entregada al destinatario — se muestra aquí para que juegues los dos papeles.",
+    demoPhone: "El móvil del titular (Telegram)",
+    demoPhoneEmpty: "Aún no hay mensajes del bot.",
+    demoAliveBtn: "Responder /alive",
+    demoAliveQueued: "Respuesta enviada — la comprobación del día siguiente la contará como señal de vida.",
+    demoRepo: "Repositorio privado",
+    demoHeartbeat: "Latido en la nube",
+    demoWorkflowOn: "workflow armado",
+    demoCronTitle: "Ejecuciones diarias de la automatización",
+    demoCronEmpty: "Aún no hay ejecuciones — avanza un día.",
+    demoCronQuiet: "días {0}–{1}: sin novedad",
+    demoCronQuiet1: "día {0}: sin novedad",
+    demoCronRun: "día {0}: estado {1}, {2} días de silencio, {3} correo(s)",
+    demoInboxEmpty: "(vacío)",
+    demoMailRelease: "ENTREGA",
+    demoCopyKey: "Copiar la CLAVE",
+    demoRecipLocked: "Aquí no hay nada todavía. El destinatario sigue con su vida — hasta que llegue el correo de entrega.",
+    demoRecipIntro: "Ha llegado el correo de entrega. Abre la caja fuerte igual que lo haría el destinatario: la CLAVE del correo + las PALABRAS de la tarjeta.",
+    demoRecipKey: "CLAVE (del correo)",
+    demoRecipKeyPh: "pega aquí la clave",
+    demoRecipWords: "PALABRAS (de la tarjeta)",
+    demoRecipWordsPh: "escribe las seis palabras",
+    demoRecipOpen: "Abrir la caja fuerte",
+    demoRecipOpenedTitle: "La caja fuerte está abierta",
+    demoRecipFiles: "Archivos descifrados",
+    demoEvArmed: "día {0}: caja fuerte creada, interruptor armado en la nube",
+    demoEvPackaged: "día {0}: paquete generado y compartido con el destinatario",
+    demoEvCheckin: "señal de vida — el reloj vuelve al día 0",
+    demoEvCheckinTg: "/alive por Telegram — señal de vida automática, reloj al día 0",
+    demoEvWarned: "día {0}: primer aviso al titular",
+    demoEvReleased: "día {0}: la CLAVE se envió por correo al destinatario",
+    demoEvOpened: "el destinatario abrió la caja fuerte",
+    demoEvReset: "demo reiniciada",
+    demoEventsTitle: "Registro de la historia",
+    wizDemoHint: "¿Solo quieres probar? Ejecuta  kawarimi demo  en una terminal para un recorrido completo en un entorno de pruebas.",
+
     updateAvailable: "Actualización disponible: v{0}",
     updateNow: "Actualizar ahora",
     whatsNew: "Novedades",
@@ -459,8 +563,17 @@ async function refresh() {
   render();
 }
 
+let demoNavInit = false; // demo mode lands on the theater once, then nav is the user's
+
 function render() {
   updateStateDot();
+  if (state.demoMode) {
+    if (!demoNavInit) { demoNavInit = true; nav = "demo"; }
+    document.body.classList.toggle("demo-wide", nav === "demo");
+    if (nav === "entries") return viewEntries();
+    if (nav === "dashboard") return viewDashboard();
+    return viewDemo();
+  }
   if (!state.configured) return viewWizard();
   if (!state.unlocked) return viewUnlock();
   if (nav === "wizard") return viewWizard(); // resumed switch/cloud setup for an existing vault
@@ -475,7 +588,9 @@ function appShell(active, ...content) {
     onclick: () => { nav = id; render(); }
   }, label);
   return h("div", null,
-    h("div", { class: "navbar" }, tab("dashboard", t("navDashboard")), tab("entries", t("navEntries"))),
+    h("div", { class: "navbar" },
+      state.demoMode ? tab("demo", t("navDemo")) : null,
+      tab("dashboard", t("navDashboard")), tab("entries", t("navEntries"))),
     ...content);
 }
 
@@ -672,6 +787,194 @@ async function doVerify(e) {
   } catch (ex) {
     toast(ex.message, true);
   } finally { btn.disabled = false; }
+}
+
+// ---- demo mode (the lifecycle theater) ------------------------------------------
+
+let demoState = null;   // last /api/demo/state snapshot
+let demoPlaying = null; // autoplay interval id, null when paused
+let demoBusy = false;   // one world mutation at a time
+
+async function demoRefresh() {
+  demoState = await api("/api/demo/state");
+  await refresh(); // re-pull /api/state so switchStatus()/timeline track the sandbox
+}
+
+// demoAct posts a world action and re-renders. Failures (e.g. wrong recipient
+// inputs) surface as a toast — they are part of the story, not bugs.
+async function demoAct(path, body) {
+  if (demoBusy) return;
+  demoBusy = true;
+  try {
+    demoState = await api(path, { method: "POST", body: body || {} });
+    await refresh();
+  } catch (ex) {
+    toast(ex.message, true);
+  } finally {
+    demoBusy = false;
+  }
+}
+
+function demoStopPlay() {
+  if (demoPlaying) { clearInterval(demoPlaying); demoPlaying = null; }
+}
+
+function demoTogglePlay() {
+  if (demoPlaying) { demoStopPlay(); render(); return; }
+  demoPlaying = setInterval(async () => {
+    if (demoBusy) return;
+    if (!demoState || demoState.released || nav !== "demo") { demoStopPlay(); render(); return; }
+    await demoAct("/api/demo/advance", { days: 1 });
+  }, 1000);
+  render();
+}
+
+function viewDemo() {
+  if (!demoState) {
+    setView(h("div", { class: "card" }, h("p", { class: "sub" }, "…")));
+    demoRefresh().catch((ex) => toast(ex.message, true));
+    return;
+  }
+  const d = demoState;
+
+  setView(appShell("demo",
+    h("div", { class: "demo-banner" }, t("demoBanner")),
+    demoControls(d),
+    h("div", { class: "demo-grid" },
+      demoOwnerColumn(d), demoCloudColumn(d), demoMailColumn(d), demoRecipientColumn(d)),
+    demoEventLog(d)
+  ));
+}
+
+function demoControls(d) {
+  const st = switchStatus();
+  return h("div", { class: "card demo-controls-card" },
+    h("div", { class: "demo-controls" },
+      h("span", { class: "demo-day" }, fmt(t("demoDay"), d.day)),
+      h("span", { class: "switch-word " + st.tone }, st.word),
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn", type: "button", onclick: () => demoAct("/api/demo/advance", { days: 1 }) }, t("demoAdvance1")),
+      h("button", { class: "btn", type: "button", onclick: () => demoAct("/api/demo/advance", { days: 7 }) }, t("demoAdvance7")),
+      h("button", { class: "btn btn-ghost", type: "button", onclick: demoTogglePlay },
+        demoPlaying ? t("demoPause") : t("demoPlay")),
+      h("button", { class: "btn btn-ghost", type: "button", onclick: () => demoAct("/api/demo/checkin") }, t("checkinBtn")),
+      h("button", { class: "btn btn-danger", type: "button", onclick: () => {
+        if (window.confirm(t("demoResetConfirm"))) { demoStopPlay(); demoAct("/api/demo/reset"); }
+      } }, t("demoResetBtn"))),
+    h("p", { class: "demo-engine" }, t(d.engine === "cloud" ? "demoEngineCloud" : "demoEngineLocal")));
+}
+
+function demoOwnerColumn(d) {
+  const phone = h("div", { class: "phone-feed" },
+    d.phone.length === 0 ? h("p", { class: "muted-note" }, t("demoPhoneEmpty")) :
+      d.phone.slice(-6).map((p) =>
+        h("div", { class: "phone-msg" }, h("span", { class: "day-chip" }, fmt(t("demoDay"), p.day) + " "), p.text)));
+
+  return demoColumn(t("demoColOwner"),
+    timelineNode(),
+    h("div", { class: "facts" },
+      fact(t("factEntries"), String(state.entryCount)),
+      fact(t("factLastCheckin"), state.lastCheckin || t("never"))),
+    h("div", { class: "demo-sub" },
+      h("div", { class: "demo-sub-title" }, t("demoCardTitle")),
+      h("p", { class: "muted-note" }, t("demoCardHint")),
+      h("div", { class: "secret-val mono demo-card-words" }, d.cardWords),
+      h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: (e) => copy(d.cardWords, e.target) }, t("copyBtn"))),
+    h("div", { class: "demo-sub" },
+      h("div", { class: "demo-sub-title" }, t("demoPhone")),
+      phone,
+      h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: async () => {
+        await demoAct("/api/demo/telegram-alive");
+        toast(t("demoAliveQueued"));
+      } }, t("demoAliveBtn"))));
+}
+
+function demoCloudColumn(d) {
+  const rows = [];
+  const cron = d.cloud.cron || [];
+  // Collapse consecutive quiet runs so day 1-13 doesn't take 13 rows.
+  let i = 0;
+  while (i < cron.length) {
+    const r = cron[i];
+    const quiet = r.mailCount === 0 && r.status === "ok";
+    if (quiet) {
+      let j = i;
+      while (j + 1 < cron.length && cron[j + 1].mailCount === 0 && cron[j + 1].status === "ok") j++;
+      rows.push(h("div", { class: "cron-row" },
+        i === j ? fmt(t("demoCronQuiet1"), r.day) : fmt(t("demoCronQuiet"), r.day, cron[j].day)));
+      i = j + 1;
+    } else {
+      rows.push(h("div", { class: "cron-row loud" },
+        fmt(t("demoCronRun"), r.day, r.status, r.daysSince, r.mailCount)));
+      i++;
+    }
+  }
+
+  return demoColumn(t("demoColCloud"),
+    h("div", { class: "facts" },
+      fact(t("demoRepo"), d.cloud.repo),
+      fact(t("demoHeartbeat"), d.cloud.heartbeat ? d.cloud.heartbeat.slice(0, 10) : "—"),
+      d.cloud.workflowPresent ? fact("deadman.yml", "✓ " + t("demoWorkflowOn")) : null),
+    h("div", { class: "demo-sub-title" }, t("demoCronTitle")),
+    rows.length ? h("div", { class: "cron-log" }, rows.reverse()) : h("p", { class: "muted-note" }, t("demoCronEmpty")));
+}
+
+function demoMailColumn(d) {
+  const inbox = (title, mails) => [
+    h("div", { class: "demo-sub-title mono" }, title),
+    mails.length === 0 ? h("p", { class: "muted-note" }, t("demoInboxEmpty")) :
+      mails.slice(-12).map((m) => h("details", { class: "mail-row" + (m.release ? " mail-release" : "") },
+        h("summary", null,
+          h("span", { class: "day-chip" }, fmt(t("demoDay"), m.day)),
+          m.release ? h("span", { class: "release-chip" }, t("demoMailRelease")) : null,
+          h("span", { class: "mail-subject" }, m.subject || "(no subject)")),
+        h("pre", { class: "mail-body" }, m.body),
+        m.release ? h("div", { class: "mail-actions" },
+          h("button", { class: "btn btn-sm", type: "button", onclick: (e) => copy(d.keyB64, e.target) }, t("demoCopyKey"))) : null)),
+  ];
+  return demoColumn(t("demoColMail"),
+    ...inbox(d.ownerEmail, d.ownerInbox || []),
+    ...inbox(d.recipientEmail, d.recipientInbox || []));
+}
+
+function demoRecipientColumn(d) {
+  if (!d.released) {
+    return demoColumn(t("demoColRecipient"),
+      h("div", { class: "demo-locked" }, t("demoRecipLocked")));
+  }
+  if (d.recipient && d.recipient.opened) {
+    return demoColumn(t("demoColRecipient"),
+      h("div", { class: "demo-sub-title" }, t("demoRecipOpenedTitle")),
+      h("div", { class: "demo-sub-title mono" }, t("demoRecipFiles")),
+      h("ul", { class: "demo-files" }, (d.recipient.files || []).map((f) => h("li", { class: "mono" }, f))),
+      h("pre", { class: "mail-body" }, d.recipient.index || ""));
+  }
+  const key = h("input", { type: "text", class: "mono", placeholder: t("demoRecipKeyPh") });
+  const words = h("input", { type: "text", class: "mono", placeholder: t("demoRecipWordsPh") });
+  return demoColumn(t("demoColRecipient"),
+    h("p", { class: "muted-note" }, t("demoRecipIntro")),
+    h("label", null, t("demoRecipKey")), key,
+    h("label", null, t("demoRecipWords")), words,
+    h("div", { class: "btn-row" },
+      h("button", { class: "btn", type: "button", onclick: () =>
+        demoAct("/api/demo/recipient-open", { key: key.value, words: words.value }) }, t("demoRecipOpen"))));
+}
+
+function demoEventLog(d) {
+  const line = (ev) => {
+    if (ev.code === "checkin") return t(ev.arg === "telegram" ? "demoEvCheckinTg" : "demoEvCheckin");
+    const key = { armed: "demoEvArmed", packaged: "demoEvPackaged", warned: "demoEvWarned", released: "demoEvReleased", opened: "demoEvOpened", reset: "demoEvReset" }[ev.code];
+    return key ? fmt(t(key), ev.day) : ev.code;
+  };
+  return h("div", { class: "demo-log card" },
+    h("div", { class: "demo-sub-title" }, t("demoEventsTitle")),
+    h("ul", null, (d.events || []).map((ev) => h("li", null, line(ev)))));
+}
+
+function demoColumn(title, ...kids) {
+  return h("div", { class: "demo-col" },
+    h("div", { class: "demo-col-title" }, title),
+    ...kids);
 }
 
 // ---- entries ------------------------------------------------------------------
@@ -941,6 +1244,7 @@ function wizCreate() {
   },
     h("h1", null, t("wCreateTitle")),
     h("p", { class: "sub" }, t("wCreateSub")),
+    h("p", { class: "help" }, t("wizDemoHint")),
     h("label", null, t("password")), pw, meter,
     h("label", null, t("wConfirmPw")), pw2,
     h("label", null, t("wFolder"), " ", h("span", { class: "hint" }, t("wOptional"))), dir,

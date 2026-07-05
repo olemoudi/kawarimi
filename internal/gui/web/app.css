@@ -422,6 +422,60 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
   body.print-solo .print-card.print-target { display: block; width: 86mm; }
 }
 
+/* ---- demo mode (the lifecycle theater) ---------------------------------- */
+
+body.demo-wide .app { max-width: 1440px; }
+.demo-banner {
+  background: var(--amber-soft); border: 1px solid var(--amber); color: var(--text);
+  border-radius: 8px; padding: 10px 14px; font-size: 13px; font-weight: 600; margin-bottom: 14px;
+}
+.demo-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.demo-controls-card { padding: 14px 18px; }
+.demo-day { font-size: 22px; font-weight: 700; font-family: var(--mono); }
+.demo-engine { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+.demo-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px; margin-top: 14px; align-items: start;
+}
+@media (max-width: 1100px) { .demo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .demo-grid { grid-template-columns: 1fr; } }
+.demo-col { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; box-shadow: var(--shadow); }
+/* The dashboard timeline is designed for full width; in a narrow demo column the
+   middle tick labels collide, so only the endpoints keep labels. */
+.demo-col .tl-tick:not(.start):not(.end) { color: transparent; }
+.demo-col-title {
+  font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); margin-bottom: 10px;
+}
+.demo-sub { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.demo-sub-title { font-weight: 600; font-size: 12.5px; margin: 6px 0; }
+.muted-note { color: var(--muted); font-size: 12.5px; margin: 4px 0; }
+.demo-card-words { margin: 6px 0; }
+.phone-feed { max-height: 190px; overflow-y: auto; }
+.phone-msg { background: var(--panel-2); border-radius: 8px; padding: 7px 9px; font-size: 12.5px; margin: 6px 0; white-space: pre-wrap; }
+.cron-log { max-height: 320px; overflow-y: auto; }
+.cron-row { font-family: var(--mono); font-size: 11.5px; padding: 3px 0; color: var(--muted); }
+.cron-row.loud { color: var(--text); }
+.mail-row { border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; background: var(--panel-2); }
+.mail-row summary { padding: 7px 9px; cursor: pointer; font-size: 12.5px; display: flex; gap: 8px; align-items: center; }
+.mail-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-body {
+  font-family: var(--mono); font-size: 11px; white-space: pre-wrap; margin: 0;
+  padding: 8px 10px; border-top: 1px solid var(--line); max-height: 260px; overflow: auto;
+}
+.mail-actions { padding: 8px 10px; border-top: 1px solid var(--line); }
+.mail-release { border-color: var(--alarm); }
+.mail-release summary { background: var(--alarm-soft); }
+.release-chip {
+  background: var(--alarm); color: #fff; font-size: 10px; font-weight: 700;
+  border-radius: 4px; padding: 1px 6px; letter-spacing: 0.04em;
+}
+.day-chip { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.demo-locked { color: var(--muted); font-size: 13px; padding: 24px 8px; text-align: center; }
+.demo-files { margin: 6px 0 10px 18px; font-size: 12px; }
+.demo-log { margin-top: 14px; }
+.demo-log ul { margin: 4px 0 0 18px; font-size: 12.5px; color: var(--muted); }
+
 /* The standalone recipient card (built by printCard); hidden on screen. */
 .print-card { display: none; }
 .print-card .pc-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
