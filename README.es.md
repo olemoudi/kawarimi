@@ -1,4 +1,4 @@
-# kawarimi
+# 🪵 kawarimi
 
 [English](README.md) | **Español**
 

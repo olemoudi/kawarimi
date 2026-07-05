@@ -102,6 +102,7 @@ body {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--muted); flex-shrink: 0;
 }
+.brand-log { font-size: 17px; line-height: 1; margin-right: -3px; }
 .brand-dot.armed { background: var(--alive); animation: breathe 2.6s ease-in-out infinite; }
 .brand-dot.warn { background: var(--amber); }
 .brand-dot.alarm { background: var(--alarm); }

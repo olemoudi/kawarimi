@@ -1326,7 +1326,7 @@ function printCard(passphrase) {
   let card = document.getElementById("printCard");
   if (!card) {
     card = h("div", { class: "print-card", id: "printCard" },
-      h("div", { class: "pc-title" }, "kawarimi — tarjeta de acceso / access card"),
+      h("div", { class: "pc-title" }, "🪵 kawarimi — tarjeta de acceso / access card"),
       h("div", { class: "pc-words" }, passphrase),
       h("p", { class: "pc-text" },
         "Guarda esta tarjeta en un lugar seguro. Un día recibirás un correo con una CLAVE. " +
