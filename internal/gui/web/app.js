@@ -202,7 +202,9 @@ const I18N = {
     wPkgTitle: "Build the recipient package",
     wPkgSub: "A zip with the encrypted vault and instructions — no secrets inside. Upload it to the location you set in step 3.",
     wPkgAuto: "Include recipient apps",
-    wPkgAutoHint: "(builds the program for every platform; needs the source checkout)",
+    wPkgAutoHint: "(the official verified release apps when available; otherwise built locally from the source checkout)",
+    wPkgSrcOfficial: "Contains the official release apps {0} (signature verified).",
+    wPkgSrcLocal: "Contains apps built locally from source (not the published release artifacts).",
     wPkgNone: "No apps",
     wPkgNoneHint: "(recipients download kawarimi themselves)",
     wPkgOut: "Output file",
@@ -428,7 +430,9 @@ const I18N = {
     wPkgTitle: "Generar el paquete para tus destinatarios",
     wPkgSub: "Un zip con la caja fuerte cifrada e instrucciones — sin ningún secreto dentro. Súbelo a la ubicación que indicaste en el paso 3.",
     wPkgAuto: "Incluir los programas",
-    wPkgAutoHint: "(compila el programa para cada plataforma; requiere el código fuente)",
+    wPkgAutoHint: "(los programas oficiales verificados de la última versión si es posible; si no, compilados localmente desde el código fuente)",
+    wPkgSrcOfficial: "Contiene los programas oficiales de la versión {0} (firma verificada).",
+    wPkgSrcLocal: "Contiene programas compilados localmente (no son los artefactos publicados).",
     wPkgNone: "Sin programas",
     wPkgNoneHint: "(los destinatarios descargan kawarimi por su cuenta)",
     wPkgOut: "Archivo de salida",
@@ -1471,6 +1475,12 @@ function wizPackage() {
         const r = await api("/api/package/build", { method: "POST", body: { mode, output: out.value.trim() } });
         result.innerHTML = "";
         result.appendChild(h("div", { class: "ok-line" }, fmt(t("wPkgBuilt"), r.path, r.sizeMB)));
+        const src = r.binariesSource || "";
+        if (src.startsWith("official ")) {
+          result.appendChild(h("div", { class: "hint" }, fmt(t("wPkgSrcOfficial"), src.slice("official ".length))));
+        } else if (src === "local") {
+          result.appendChild(h("div", { class: "hint" }, t("wPkgSrcLocal")));
+        }
         btn.textContent = t("wPkgRebuild");
         btn.disabled = false;
       } catch (ex) { err.textContent = ex.message; btn.disabled = false; btn.textContent = t("wPkgBuild"); }

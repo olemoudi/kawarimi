@@ -1,19 +1,22 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/olemoudi/kawarimi/internal/config"
+	"github.com/olemoudi/kawarimi/internal/selfupdate"
 	"github.com/olemoudi/kawarimi/internal/vault"
 )
 
 // handlePackageBuild assembles the distributable recipient package (zip). Like the
-// CLI, cross-compiling recipient binaries requires a kawarimi source checkout;
-// callers can instead choose "none" to omit binaries.
+// CLI, it prefers the official verified release binaries and falls back to a local
+// cross-compile (which needs a source checkout); "none" omits binaries entirely.
 func (s *server) handlePackageBuild(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -44,26 +47,34 @@ func (s *server) handlePackageBuild(w http.ResponseWriter, r *http.Request) {
 	}
 
 	binariesDir := ""
-	var cleanup func()
+	binariesSource := "none" // "official <tag>" | "local" | "none"
 	if body.Mode != "none" {
-		src := s.resolveSourceDir()
-		if src == "" {
-			writeError(w, http.StatusBadRequest,
-				"no kawarimi source found to build recipient binaries — launch 'kawarimi gui' from a source checkout (or pass --source), or choose \"no binaries\"")
-			return
-		}
 		tmp, err := os.MkdirTemp("", "kawarimi-bin-")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		cleanup = func() { os.RemoveAll(tmp) }
-		defer cleanup()
-		if _, err := vault.CrossCompile(src, tmp, s.opts.Version); err != nil {
-			writeError(w, http.StatusInternalServerError, "cross-compiling: "+err.Error())
-			return
+		defer os.RemoveAll(tmp)
+
+		// Prefer the official published binaries (Ed25519-verified, and carrying
+		// any OS code signatures a release has); fall back to a local build.
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		defer cancel()
+		if tag, err := selfupdate.FetchOfficialBinaries(ctx, tmp); err == nil {
+			binariesDir, binariesSource = tmp, "official "+tag
+		} else {
+			src := s.resolveSourceDir()
+			if src == "" {
+				writeError(w, http.StatusBadRequest,
+					"could not fetch the official release binaries ("+err.Error()+") and no kawarimi source checkout is available for a local build — retry online, launch 'kawarimi gui' from a source checkout (or pass --source), or choose \"no binaries\"")
+				return
+			}
+			if _, cerr := vault.CrossCompile(src, tmp, s.opts.Version); cerr != nil {
+				writeError(w, http.StatusInternalServerError, "cross-compiling: "+cerr.Error())
+				return
+			}
+			binariesDir, binariesSource = tmp, "local"
 		}
-		binariesDir = tmp
 	}
 
 	if err := vault.BuildPackage(cfg.VaultDir, output, binariesDir); err != nil {
@@ -77,9 +88,10 @@ func (s *server) handlePackageBuild(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":     true,
-		"path":   output,
-		"sizeMB": fmt.Sprintf("%.1f", float64(info.Size())/(1024*1024)),
+		"ok":             true,
+		"path":           output,
+		"sizeMB":         fmt.Sprintf("%.1f", float64(info.Size())/(1024*1024)),
+		"binariesSource": binariesSource,
 	})
 }
 

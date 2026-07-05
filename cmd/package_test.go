@@ -49,9 +49,13 @@ func TestResolveSourceDirExplicit(t *testing.T) {
 	}
 }
 
-// resolvePackageBinaries decides between --no-binaries, --binaries <dir>, and
-// building from source; the failure modes must be loud, not silent.
+// resolvePackageBinaries decides between --no-binaries, --binaries <dir>,
+// official verified release binaries, and building from source; the failure
+// modes must be loud, not silent.
 func TestResolvePackageBinaries(t *testing.T) {
+	// Kill the official-binaries fetch (no network in tests): the default branch
+	// must warn and fall through to the local-build logic.
+	t.Setenv("KAWARIMI_GITHUB_API", "http://127.0.0.1:1")
 	restore := func() {
 		packageNoBinaries, packageBinaries, packageSource = false, "", ""
 	}
@@ -85,10 +89,32 @@ func TestResolvePackageBinaries(t *testing.T) {
 		cleanup()
 	}
 
-	// Default mode outside a source checkout: a clear error, not a broken package.
+	// Default mode: the official fetch fails (dead API above) with a LOUD warning,
+	// then falls through; outside a source checkout that ends in a clear error.
 	restore()
 	t.Chdir(t.TempDir())
-	if _, _, err := resolvePackageBinaries(); err == nil || !strings.Contains(err.Error(), "--no-binaries") {
-		t.Errorf("no source found must explain the options, got %v", err)
+	var resolveErr error
+	stdout := capture(t, &os.Stdout, func() {
+		_, _, resolveErr = resolvePackageBinaries()
+	})
+	if resolveErr == nil || !strings.Contains(resolveErr.Error(), "--no-binaries") {
+		t.Errorf("no source found must explain the options, got %v", resolveErr)
+	}
+	if !strings.Contains(stdout, "WARNING: could not fetch verified official release binaries") {
+		t.Errorf("the official-fetch fallback must warn loudly, got:\n%s", stdout)
+	}
+
+	// An explicit --source must NOT attempt the official download at all: point the
+	// env at a would-fail endpoint and expect the source path error only.
+	restore()
+	packageSource = filepath.Join(t.TempDir(), "not-a-checkout")
+	stdout = capture(t, &os.Stdout, func() {
+		_, _, resolveErr = resolvePackageBinaries()
+	})
+	if strings.Contains(stdout, "official release binaries") {
+		t.Errorf("--source must skip the official fetch, got:\n%s", stdout)
+	}
+	if resolveErr == nil {
+		t.Error("a bogus --source dir must fail")
 	}
 }

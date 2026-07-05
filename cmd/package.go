@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/olemoudi/kawarimi/internal/config"
+	"github.com/olemoudi/kawarimi/internal/selfupdate"
 	"github.com/olemoudi/kawarimi/internal/vault"
 	"github.com/spf13/cobra"
 )
@@ -97,6 +100,16 @@ func resolvePackageBinaries() (dir string, cleanup func(), err error) {
 		return packageBinaries, nil, nil
 
 	default:
+		// Prefer the OFFICIAL published binaries: recipients then get exactly the
+		// released artifacts, verified against the Ed25519-signed checksums file —
+		// and carrying any OS code signatures a release has. An explicit --source
+		// means the owner wants a local build.
+		if packageSource == "" {
+			if dir, cleanup, ok := fetchOfficialBinaries(); ok {
+				return dir, cleanup, nil
+			}
+		}
+
 		src := resolveSourceDir(packageSource)
 		if src == "" {
 			return "", nil, fmt.Errorf(
@@ -118,6 +131,30 @@ func resolvePackageBinaries() (dir string, cleanup func(), err error) {
 		fmt.Printf("Built %d recipient binaries.\n", len(built))
 		return tmp, func() { os.RemoveAll(tmp) }, nil
 	}
+}
+
+// fetchOfficialBinaries downloads the latest release's verified binaries into a
+// temp dir. On any failure it warns and reports ok=false so the caller falls back
+// to a local build.
+func fetchOfficialBinaries() (dir string, cleanup func(), ok bool) {
+	tmp, err := os.MkdirTemp("", "kawarimi-bin-")
+	if err != nil {
+		fmt.Printf("WARNING: %v — building binaries locally instead.\n", err)
+		return "", nil, false
+	}
+	fmt.Println("Fetching the official release binaries (signature-verified)...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	tag, err := selfupdate.FetchOfficialBinaries(ctx, tmp)
+	if err != nil {
+		os.RemoveAll(tmp)
+		fmt.Printf("WARNING: could not fetch verified official release binaries (%v).\n", err)
+		fmt.Println("Falling back to a local source build — those binaries are NOT the published")
+		fmt.Println("artifacts and carry no OS code signature.")
+		return "", nil, false
+	}
+	fmt.Printf("Packaging official release binaries %s (signature verified).\n", tag)
+	return tmp, func() { os.RemoveAll(tmp) }, true
 }
 
 // resolveSourceDir returns the kawarimi module source directory, or "" if none.

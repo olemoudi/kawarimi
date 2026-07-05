@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -166,5 +167,135 @@ func TestAssetName(t *testing.T) {
 	}
 	if got := AssetName("darwin", "arm64"); got != "kawarimi-darwin-arm64" {
 		t.Errorf("darwin asset = %q", got)
+	}
+}
+
+// multiAssetRelease serves a fake release carrying ALL five platform binaries with
+// a signed multi-line checksums file, for FetchOfficialBinaries tests. tamper can
+// mutate any piece before serving.
+func multiAssetRelease(t *testing.T, tag string, draft bool, tamper func(assets map[string][]byte, checksums, sig *[]byte)) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := releasePublicKey
+	releasePublicKey = pub
+	t.Cleanup(func() { releasePublicKey = orig })
+
+	assets := map[string][]byte{}
+	var lines string
+	for _, target := range officialTargets {
+		name := AssetName(target[0], target[1])
+		body := []byte("official binary " + name)
+		assets[name] = body
+		sum := sha256.Sum256(body)
+		lines += fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), name)
+	}
+	checksums := []byte(lines)
+	sig := []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(priv, checksums)) + "\n")
+	if tamper != nil {
+		tamper(assets, &checksums, &sig)
+	}
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	mux.HandleFunc("/repos/olemoudi/kawarimi/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		list := []map[string]string{
+			{"name": "checksums.txt", "browser_download_url": srv.URL + "/a/checksums.txt"},
+			{"name": "checksums.txt.sig", "browser_download_url": srv.URL + "/a/checksums.txt.sig"},
+		}
+		for name := range assets {
+			list = append(list, map[string]string{"name": name, "browser_download_url": srv.URL + "/a/" + name})
+		}
+		json.NewEncoder(w).Encode(map[string]any{"tag_name": tag, "draft": draft, "assets": list})
+	})
+	mux.HandleFunc("/a/", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Path[len("/a/"):]
+		switch name {
+		case "checksums.txt":
+			w.Write(checksums)
+		case "checksums.txt.sig":
+			w.Write(sig)
+		default:
+			if body, ok := assets[name]; ok {
+				w.Write(body)
+				return
+			}
+			http.NotFound(w, r)
+		}
+	})
+	t.Setenv("KAWARIMI_GITHUB_API", srv.URL)
+	t.Cleanup(srv.Close)
+}
+
+func TestFetchOfficialBinariesHappyPath(t *testing.T) {
+	multiAssetRelease(t, "v0.9.0", false, nil)
+	dest := t.TempDir()
+
+	tag, err := FetchOfficialBinaries(context.Background(), dest)
+	if err != nil {
+		t.Fatalf("FetchOfficialBinaries: %v", err)
+	}
+	if tag != "v0.9.0" {
+		t.Errorf("tag = %q", tag)
+	}
+	for _, target := range officialTargets {
+		name := AssetName(target[0], target[1])
+		path := filepath.Join(dest, name)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("missing %s: %v", name, err)
+		}
+		if string(data) != "official binary "+name {
+			t.Errorf("%s content mismatch", name)
+		}
+		if runtime.GOOS != "windows" {
+			if info, _ := os.Stat(path); info.Mode()&0111 == 0 {
+				t.Errorf("%s is not executable", name)
+			}
+		}
+	}
+}
+
+// One tampered binary poisons the whole fetch: nothing may be written.
+func TestFetchOfficialBinariesTamperedBinaryIsAllOrNothing(t *testing.T) {
+	multiAssetRelease(t, "v0.9.0", false, func(assets map[string][]byte, checksums, sig *[]byte) {
+		assets[AssetName("windows", "amd64")] = []byte("evil payload")
+	})
+	dest := t.TempDir()
+
+	if _, err := FetchOfficialBinaries(context.Background(), dest); err == nil {
+		t.Fatal("a tampered binary must fail the whole fetch")
+	}
+	entries, _ := os.ReadDir(dest)
+	if len(entries) != 0 {
+		t.Fatalf("nothing may be written on failure, found %d files", len(entries))
+	}
+}
+
+func TestFetchOfficialBinariesBadSignature(t *testing.T) {
+	multiAssetRelease(t, "v0.9.0", false, func(assets map[string][]byte, checksums, sig *[]byte) {
+		*sig = []byte(base64.StdEncoding.EncodeToString(make([]byte, ed25519.SignatureSize)))
+	})
+	_, err := FetchOfficialBinaries(context.Background(), t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "signature") {
+		t.Fatalf("bad signature must fail loudly, got %v", err)
+	}
+}
+
+func TestFetchOfficialBinariesMissingAsset(t *testing.T) {
+	multiAssetRelease(t, "v0.9.0", false, func(assets map[string][]byte, checksums, sig *[]byte) {
+		delete(assets, AssetName("darwin", "arm64"))
+	})
+	if _, err := FetchOfficialBinaries(context.Background(), t.TempDir()); err == nil {
+		t.Fatal("a missing platform asset must fail the fetch")
+	}
+}
+
+func TestFetchOfficialBinariesDraftRelease(t *testing.T) {
+	multiAssetRelease(t, "v0.9.0", true, nil)
+	if _, err := FetchOfficialBinaries(context.Background(), t.TempDir()); err == nil {
+		t.Fatal("a draft release must not be used")
 	}
 }

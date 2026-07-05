@@ -367,15 +367,24 @@ func TestPackageBuildWithoutBinaries(t *testing.T) {
 	if err != nil || info.Size() == 0 {
 		t.Fatalf("package zip missing or empty: %v", err)
 	}
+	if !strings.Contains(rec.Body.String(), `"binariesSource":"none"`) {
+		t.Errorf("response must report the binaries source, got %s", rec.Body.String())
+	}
 }
 
 func TestPackageBuildNeedsSourceForBinaries(t *testing.T) {
+	// Kill the official-binaries fetch (no network in tests): auto mode must fall
+	// back to a local build, and with no source checkout either, explain both.
+	t.Setenv("KAWARIMI_GITHUB_API", "http://127.0.0.1:1")
 	s := newUnlockedServer(t)
 	s.opts.SourceDir = "" // and the test cwd (internal/gui) is not a module root
 	h := s.routes()
 	rec := call(h, "POST", "/api/package/build", map[string]string{"mode": "auto"})
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("auto mode without source: got %d (%s), want 400", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "official release binaries") {
+		t.Errorf("the error should mention the failed official fetch, got %s", body)
 	}
 }
 
