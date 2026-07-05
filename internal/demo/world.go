@@ -343,7 +343,7 @@ func (s *sandbox) seed(opts Options) error {
 	s.ghSecrets = s.gh.Secrets()
 
 	// Day 0 begins with a fresh proof of life, like a real just-armed install.
-	if _, err := deadswitch.RecordCheckin(s.targets(), time.Now()); err != nil {
+	if err := s.pushBackdatedHeartbeat(); err != nil {
 		return fmt.Errorf("demo initial check-in: %w", err)
 	}
 
@@ -411,15 +411,38 @@ func (w *World) Advance(days int) (*Snapshot, error) {
 			return nil, err
 		}
 	}
+	// Sync the cloud heartbeat ONCE per user action, not once per simulated day:
+	// dozens of rapid go-git pushes to the same bare repo occasionally trip a
+	// transient "packfile not found" on slow CI filesystems.
+	if err := w.s.pushBackdatedHeartbeat(); err != nil {
+		return nil, err
+	}
 	return w.s.snapshot()
+}
+
+// pushBackdatedHeartbeat records the current simulated silence through the real
+// check-in path (local file + cloud push), retrying a couple of times because
+// go-git's local-filesystem transport is flaky under CI disk latency.
+func (s *sandbox) pushBackdatedHeartbeat() error {
+	when := time.Now().Add(-time.Duration(s.day) * 24 * time.Hour)
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if _, err = deadswitch.RecordCheckin(s.targets(), when); err == nil {
+			return nil
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	return fmt.Errorf("syncing cloud heartbeat: %w", err)
 }
 
 func (s *sandbox) advanceOneDay() error {
 	s.day++
 
-	// Backdate the heartbeat through the real check-in path so the local file,
-	// the cloud repo, and every reader agree on the silence length.
-	if _, err := deadswitch.RecordCheckin(s.targets(), time.Now().Add(-time.Duration(s.day)*24*time.Hour)); err != nil {
+	// Backdate the LOCAL heartbeat directly (same trick the lifecycle tests use);
+	// the cloud repo is synced once per Advance, and the cron reads a scratch
+	// checkout, so nothing else needs a git push per simulated day.
+	ts := time.Now().Add(-time.Duration(s.day) * 24 * time.Hour).UTC().Format(time.RFC3339)
+	if err := os.WriteFile(filepath.Join(s.vaultDir, vault.LastCheckinFile), []byte(ts+"\n"), 0600); err != nil {
 		return fmt.Errorf("backdating heartbeat: %w", err)
 	}
 	// The clock-jump ratchet demands real elapsed overdue time before a LOCAL
@@ -471,21 +494,17 @@ func (s *sandbox) advanceOneDay() error {
 }
 
 // runCloudCron executes the real deadman.yml against a scratch checkout carrying
-// the cloud repo's current heartbeat.
+// the heartbeat as of the simulated day (written directly, as the lifecycle story
+// test does — the bare repo itself is synced once per Advance).
 func (s *sandbox) runCloudCron() error {
-	heartbeat, ok, err := simenv.RepoFile(s.bareRepo, "last_checkin")
-	if err != nil {
-		return err
-	}
 	checkout, err := os.MkdirTemp(s.home, "cron-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(checkout)
-	if ok {
-		if err := os.WriteFile(filepath.Join(checkout, "last_checkin"), []byte(heartbeat), 0600); err != nil {
-			return err
-		}
+	ts := time.Now().Add(-time.Duration(s.day) * 24 * time.Hour).UTC().Format(time.RFC3339)
+	if err := os.WriteFile(filepath.Join(checkout, "last_checkin"), []byte(ts+"\n"), 0600); err != nil {
+		return err
 	}
 	res, err := simenv.RunDMSWorkflow(s.wfYAML, s.ghSecrets, checkout)
 	if err != nil {
@@ -565,11 +584,11 @@ func sentTo(to []string, addr string) bool {
 func (w *World) Checkin() (*Snapshot, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if _, err := deadswitch.RecordCheckin(w.s.targets(), time.Now()); err != nil {
+	w.s.day = 0
+	if err := w.s.pushBackdatedHeartbeat(); err != nil {
 		return nil, err
 	}
 	os.Remove(filepath.Join(w.s.appDir, "first-overdue-at"))
-	w.s.day = 0
 	w.s.events = append(w.s.events, Event{Day: 0, Code: "checkin"})
 	return w.s.snapshot()
 }
