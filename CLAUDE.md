@@ -250,6 +250,12 @@ mermaid usage-flow diagram. Keep them current:
 - **Branch**: `main`
 - Use WSL/local env git (not git.exe when working on WSL). SSH private key should be at `~/.ssh/id_ed25519`. Run `switchsshkey kawarimi` if SSH errors occur. If the error persists, stop and seek guidance from the user.
 - Commit and push all changes after finishing implementing something worth a commit message.
+- **Monitor CI after every push.** The suite runs on ubuntu, windows, and macos —
+  a locally-green run is not proof. After pushing, watch the GitHub Actions run
+  for the pushed commit (`gh run list --commit <sha>` then `gh run watch <id>`,
+  or `gh run watch` the newest run) until it completes; if it fails, fetch the
+  failing job's log (`gh run view <id> --log-failed`), diagnose, and fix before
+  moving on to other work.
 
 ## Application Security
 
