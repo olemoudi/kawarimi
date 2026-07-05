@@ -169,6 +169,11 @@ func TestStory_OwnerDiesRecipientOpensVault(t *testing.T) {
 	if strings.Contains(body, card) || strings.Contains(body, mnemonic) {
 		t.Fatal("release mail leaked the card passphrase or the mnemonic")
 	}
+	// A grieving non-technical heir must learn about the physical card BEFORE the
+	// numbered steps — not discover it mid-procedure at step 5.
+	if cardAt := strings.Index(body, "CARD"); cardAt < 0 || cardAt > strings.Index(body, "1. Download") {
+		t.Error("release mail must explain the physical card before the steps")
+	}
 
 	// The heir follows the instructions: "when it asks for the KEY, paste this".
 	key := keyFromReleaseEmail(t, body)

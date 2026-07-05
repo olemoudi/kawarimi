@@ -60,12 +60,16 @@ Ninguna de las dos por separado sirve: hacen falta las dos.
 PASOS
 
   1. Ya tienes los archivos (están en esta carpeta).
-  2. Abre el programa kawarimi para tu ordenador:
-       - Windows: haz doble clic en kawarimi-windows-amd64.exe
-       - Mac:     abre "Terminal", arrastra el programa a la ventana,
+  2. Abre el programa kawarimi para TU ordenador — búscalo en la lista de
+     arriba ("Programas incluidos"):
+       - Windows: haz doble clic en el programa que termina en .exe
+       - Mac:     hay dos programas para Mac: "Apple Silicon" para Macs de 2021
+                  en adelante (M1/M2/M3...) e "Intel" para Macs más antiguos;
+                  si no lo sabes, prueba primero el de Apple Silicon.
+                  Abre "Terminal", arrastra el programa a la ventana,
                   escribe un espacio y la palabra  open  y pulsa Intro
-       - Linux:   abre un terminal en esta carpeta y ejecuta:
-                  ./kawarimi-linux-amd64 open
+       - Linux:   igual que en Mac: abre un terminal, arrastra el programa,
+                  escribe un espacio y la palabra  open  y pulsa Intro
   3. El programa te preguntará:
        - Pega la CLAVE del correo electrónico.
        - Escribe las PALABRAS de la tarjeta.
@@ -99,12 +103,16 @@ Neither one alone is enough — you need both.
 STEPS
 
   1. You already have the files (they are in this folder).
-  2. Open the kawarimi program for your computer:
-       - Windows: double-click kawarimi-windows-amd64.exe
-       - Mac:     open "Terminal", drag the program into the window,
+  2. Open the kawarimi program for YOUR computer — find it in the list at
+     the top ("Programs included"):
+       - Windows: double-click the program ending in .exe
+       - Mac:     there are two Mac programs: "Apple Silicon" for Macs from
+                  2021 onwards (M1/M2/M3...) and "Intel" for older Macs;
+                  if unsure, try the Apple Silicon one first.
+                  Open "Terminal", drag the program into the window,
                   type a space and the word  open  and press Enter
-       - Linux:   open a terminal in this folder and run:
-                  ./kawarimi-linux-amd64 open
+       - Linux:   same as on Mac: open a terminal, drag the program in,
+                  type a space and the word  open  and press Enter
   3. The program will ask you to:
        - Paste the KEY from the email.
        - Type the WORDS from the card.
@@ -126,17 +134,22 @@ IF THE PROGRAM CLOSES BY ITSELF OR WON'T OPEN
 `, buildDate, binaryList(binaries))
 }
 
-// ReleaseEmailBody returns the body of the email a recipient receives when the
-// dead man's switch fires (local trigger path). packageLocation is where to
-// download the package; dmsKey is the key value to paste.
-func ReleaseEmailBody(packageLocation, dmsKey string) string {
+// releaseEmailBody is the single source of the release email, shared by the local
+// trigger path and the generated cloud workflow so the two can never drift.
+// silentES/silentEN state how long the owner has been silent; location and key are
+// either real values (local path) or bash placeholders (workflow heredoc).
+func releaseEmailBody(silentES, silentEN, location, key string) string {
 	return fmt.Sprintf(`Este es un mensaje automático de la caja fuerte de información Kawarimi.
 This is an automated message from the Kawarimi information vault.
 
 --- ESPAÑOL ---
 
-El titular no ha dado señales de vida en el plazo previsto, así que ahora
+El titular no ha dado señales de vida %s, así que ahora
 puedes acceder a la información que dejó preparada para ti.
+
+IMPORTANTE: además de este correo necesitas la TARJETA física con las
+palabras que el titular te entregó en su día. La clave de este correo por sí
+sola no abre nada. Si no tienes la tarjeta, pregunta a la familia.
 
   1. Descarga el paquete (usa siempre el MÁS RECIENTE) desde:
        %s
@@ -153,8 +166,12 @@ puedes acceder a la información que dejó preparada para ti.
 
 --- ENGLISH ---
 
-The owner has not checked in within the expected time, so you may now access
+The owner has not checked in %s, so you may now access
 the information they prepared for you.
+
+IMPORTANT: besides this email you need the physical CARD with the words the
+owner gave you. The key in this email opens nothing by itself. If you do not
+have the card, ask the family.
 
   1. Download the package (always use the NEWEST one) from:
        %s
@@ -168,7 +185,33 @@ the information they prepared for you.
 
   5. When it asks for the WORDS, type them from the physical card.
   6. Your files will appear in the "decrypted" folder; open INDEX.md first.
-`, packageLocation, dmsKey, packageLocation, dmsKey)
+`, silentES, location, key, silentEN, location, key)
+}
+
+// ReleaseEmailBody returns the body of the email a recipient receives when the
+// dead man's switch fires (local trigger path). packageLocation is where to
+// download the package; dmsKey is the key value to paste.
+func ReleaseEmailBody(packageLocation, dmsKey string) string {
+	return releaseEmailBody("en el plazo previsto", "within the expected time", packageLocation, dmsKey)
+}
+
+// ReleaseEmailBodyWorkflow returns the same email for embedding in the generated
+// GitHub workflow's bash heredoc: bash placeholders pass through verbatim and
+// accents are stripped so the raw heredoc stays ASCII (conservative against MIME
+// mangling — the workflow's curl mailer uploads the file as-is).
+func ReleaseEmailBodyWorkflow() string {
+	return stripAccents(releaseEmailBody("en $DAYS dias", "for $DAYS days",
+		"$VAULT_PACKAGE_LOCATION", "$DMS_KEY"))
+}
+
+var accentReplacer = strings.NewReplacer(
+	"á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ü", "u", "ñ", "n",
+	"Á", "A", "É", "E", "Í", "I", "Ó", "O", "Ú", "U", "Ü", "U", "Ñ", "N",
+	"¿", "", "¡", "", "—", "-",
+)
+
+func stripAccents(s string) string {
+	return accentReplacer.Replace(s)
 }
 
 // VaultReadme returns the README.md written into a vault directory. It no longer

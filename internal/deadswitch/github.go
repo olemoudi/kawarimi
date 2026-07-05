@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
+
+	"github.com/olemoudi/kawarimi/internal/copytext"
 )
 
 // GenerateGitHubWorkflow returns the GitHub Actions workflow YAML for the dead man's switch.
@@ -90,8 +93,10 @@ jobs:
 // step change) so a deployed switch running an older automation is detected as
 // outdated and the owner is told to re-run `kawarimi switch seed`. History:
 // v1 = the original dawidd6/action-send-mail workflow; v2 = the self-contained curl
-// mailer (no third-party action, templated SMTP port/scheme).
-const DMSWorkflowVersion = 2
+// mailer (no third-party action, templated SMTP port/scheme); v3 = release email
+// generated from copytext (one canonical body with the local path; the physical
+// card is now explained before the steps).
+const DMSWorkflowVersion = 3
 
 type dmsWorkflowParams struct {
 	WorkflowVersion int
@@ -100,6 +105,7 @@ type dmsWorkflowParams struct {
 	SMTPPort        int    // templated into the workflow (was hardcoded 587)
 	Scheme          string // "smtp" (STARTTLS) or "smtps" (implicit TLS on 465)
 	Telegram        bool   // include a Telegram owner-alert step
+	ReleaseBody     string // recipient email body, pre-indented to the run-block column
 }
 
 // dmsWorkflowTmpl renders the standalone DMS repo workflow. It uses [[ ]] delimiters
@@ -132,6 +138,7 @@ func GenerateGitHubDMSWorkflow(cfg *SwitchConfig) string {
 		SMTPPort:        port,
 		Scheme:          scheme,
 		Telegram:        cfg.TelegramBotToken != "",
+		ReleaseBody:     indentForRunBlock(copytext.ReleaseEmailBodyWorkflow()),
 	}
 	var buf bytes.Buffer
 	if err := dmsWorkflowTmpl.Execute(&buf, params); err != nil {
@@ -279,36 +286,7 @@ jobs:
           MIME-Version: 1.0
           Content-Type: text/plain; charset=UTF-8
 
-          Mensaje automatico de la caja fuerte de informacion Kawarimi.
-          Automated message from the Kawarimi information vault.
-
-          --- ESPANOL ---
-          El titular no ha dado senales de vida en $DAYS dias.
-          Ahora puedes acceder a la informacion que dejo preparada para ti.
-
-          1. Descarga el paquete (usa siempre el MAS RECIENTE) desde:
-               $VAULT_PACKAGE_LOCATION
-          2. Descomprime el archivo .zip en una carpeta.
-          3. Abre el programa kawarimi (doble clic en Windows; en Mac/Linux
-             ejecutalo con la palabra  open ) y sigue las preguntas.
-          4. Cuando te pida la CLAVE, pega este texto:
-               $DMS_KEY
-          5. Cuando te pida las PALABRAS, escribelas desde la tarjeta fisica.
-          6. Tus archivos apareceran en la carpeta "decrypted"; abre INDEX.md primero.
-
-          --- ENGLISH ---
-          The owner has not checked in for $DAYS days.
-          You may now access the information they prepared for you.
-
-          1. Download the package (always use the NEWEST one) from:
-               $VAULT_PACKAGE_LOCATION
-          2. Unzip it into a folder.
-          3. Open the kawarimi program (double-click on Windows; on Mac/Linux
-             run it with the word  open ) and follow the prompts.
-          4. When it asks for the KEY, paste this text:
-               $DMS_KEY
-          5. When it asks for the WORDS, type them from the physical card.
-          6. Your files will appear in the "decrypted" folder; open INDEX.md first.
+[[.ReleaseBody]]
           EOF
           sed 's/$/\r/' message.txt > message.eml
           rcpts=()
@@ -324,6 +302,18 @@ jobs:
             "${rcpts[@]}" \
             --upload-file message.eml
 `
+
+// indentForRunBlock indents every non-empty line to the workflow's `run: |` block
+// column (10 spaces), so the YAML strip leaves the heredoc body at column 0.
+func indentForRunBlock(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	for i, l := range lines {
+		if l != "" {
+			lines[i] = "          " + l
+		}
+	}
+	return strings.Join(lines, "\n")
+}
 
 // InstallGitHubWorkflow writes the workflow file to the vault's .github/workflows/ directory.
 func InstallGitHubWorkflow(vaultDir string, cfg *SwitchConfig) error {
