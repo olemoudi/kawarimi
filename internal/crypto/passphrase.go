@@ -71,3 +71,70 @@ func PromptPassphraseConfirm() (string, error) {
 	}
 	return pass1, nil
 }
+
+// PromptNewPassphrase prompts (with confirmation) for a NEW vault-protecting
+// passphrase, shows the strength meter, and gates weak choices: an interactive
+// user must explicitly accept a below-fair password (or re-enter a better one).
+// Non-interactive input only warns, so scripts and tests keep working; setting
+// KAWARIMI_STRENGTH_STRICT=1 forces the gate even without a terminal (used by
+// tests to exercise both gate outcomes).
+func PromptNewPassphrase() (string, error) {
+	for {
+		pass, err := PromptPassphraseConfirm()
+		if err != nil {
+			return "", err
+		}
+		strength := EstimatePasswordStrength(pass)
+		fmt.Fprintln(os.Stderr, RenderStrengthMeter(strength))
+		if strength.Level >= AcceptableStrengthLevel {
+			return pass, nil
+		}
+		interactive := term.IsTerminal(int(os.Stdin.Fd()))
+		if !interactive && os.Getenv("KAWARIMI_STRENGTH_STRICT") != "1" {
+			fmt.Fprintln(os.Stderr, "WARNING: proceeding with a weak password (non-interactive input).")
+			return pass, nil
+		}
+		fmt.Fprint(os.Stderr, "This password is below the recommended strength. Use it anyway? [y/N]: ")
+		answer, err := readLineUnbuffered(os.Stdin)
+		if err != nil {
+			return "", fmt.Errorf("reading confirmation: %w", err)
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "y", "yes":
+			return pass, nil
+		}
+		fmt.Fprintln(os.Stderr, "Pick a stronger passphrase (a few random words, or 12+ mixed characters).")
+	}
+}
+
+// RenderStrengthMeter renders a one-line ASCII strength meter for CLI display.
+func RenderStrengthMeter(s PasswordStrength) string {
+	filled := (s.Level + 1) * 2
+	bar := strings.Repeat("#", filled) + strings.Repeat("-", 10-filled)
+	label := strings.ReplaceAll(s.LevelKey, "_", " ")
+	return fmt.Sprintf("Strength: [%s] %s (~%.0f bits) — est. %s to crack for a $100k/year attacker",
+		bar, label, s.Bits, FormatCrackTime(s.CrackYears))
+}
+
+// FormatCrackTime renders an expected crack time (in years) as a rough
+// human-readable duration.
+func FormatCrackTime(years float64) string {
+	switch {
+	case years < 1.0/8766: // under an hour
+		return "less than an hour"
+	case years < 2.0/365:
+		return fmt.Sprintf("%.0f hours", years*8766)
+	case years < 2.0/12:
+		return fmt.Sprintf("%.0f days", years*365.25)
+	case years < 2:
+		return fmt.Sprintf("%.0f months", years*12)
+	case years < 1000:
+		return fmt.Sprintf("%.0f years", years)
+	case years < 1e6:
+		return fmt.Sprintf("%.0f thousand years", years/1e3)
+	case years < 1e9:
+		return fmt.Sprintf("%.0f million years", years/1e6)
+	default:
+		return "over a billion years"
+	}
+}

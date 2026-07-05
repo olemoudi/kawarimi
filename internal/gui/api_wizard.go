@@ -9,11 +9,28 @@ import (
 	"time"
 
 	"github.com/olemoudi/kawarimi/internal/config"
+	"github.com/olemoudi/kawarimi/internal/crypto"
 	"github.com/olemoudi/kawarimi/internal/deadswitch"
 	"github.com/olemoudi/kawarimi/internal/github"
 	"github.com/olemoudi/kawarimi/internal/setup"
 	"github.com/olemoudi/kawarimi/internal/vault"
 )
+
+// handlePasswordStrength scores a candidate vault password for the live meter.
+// The estimate never leaves this machine — the GUI server is loopback-only.
+func (s *server) handlePasswordStrength(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	writeJSON(w, http.StatusOK, crypto.EstimatePasswordStrength(body.Password))
+}
 
 // handleInit creates a brand-new vault and returns the one-time secrets to display.
 // It then unlocks the session with the same password so the wizard can add entries.
@@ -22,8 +39,9 @@ func (s *server) handleInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Password string `json:"password"`
-		VaultDir string `json:"vaultDir"`
+		Password   string `json:"password"`
+		VaultDir   string `json:"vaultDir"`
+		AcceptWeak bool   `json:"acceptWeak"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -31,6 +49,12 @@ func (s *server) handleInit(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(body.Password) == "" {
 		writeError(w, http.StatusBadRequest, "a password is required")
+		return
+	}
+	// The client-side meter gates weak passwords behind an explicit override;
+	// enforce the same here so the meter cannot be bypassed.
+	if crypto.EstimatePasswordStrength(body.Password).Level < crypto.AcceptableStrengthLevel && !body.AcceptWeak {
+		writeError(w, http.StatusBadRequest, "weak_password")
 		return
 	}
 

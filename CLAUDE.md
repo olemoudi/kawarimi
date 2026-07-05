@@ -211,13 +211,19 @@ possibly years later — so testing is not negotiable. Do not spare on it.
 ## Documentation
 
 `ARCHITECTURE.md` (repo root) is the contributor-facing description of how the
-whole solution works, and `docs/usage-flow.md` holds the canonical mermaid
-usage-flow diagram. Keep them current:
+whole solution works, `THREAT_MODEL.md` records the security threat-modelling
+decisions and accepted caveats, and `docs/usage-flow.md` holds the canonical
+mermaid usage-flow diagram. Keep them current:
 
 - Whenever a change alters the architecture, security design, the dead man's
   switch flow, the package layout, an on-disk format, or the usage flow, update
   `ARCHITECTURE.md` **in the same change** — see its "Keeping this document
   current" section (§16) for the change-area → section map.
+- Whenever a change touches cryptography or KDF parameters, the key-split, a
+  release path, secrets storage, the password-strength policy/estimator, or adds
+  a network-facing surface or external service, update `THREAT_MODEL.md` **in
+  the same change** — see its §9 change-area map. If the Argon2id profiles
+  change, re-run `BenchmarkOwnerSlotKDF` and refresh the §3 economics.
 - The primary lifecycle sequence diagram appears in both `ARCHITECTURE.md` §15
   and `docs/usage-flow.md`; when you touch one, keep the two copies
   **byte-identical**.

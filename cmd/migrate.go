@@ -42,7 +42,7 @@ var migrateCmd = &cobra.Command{
 
 		// Get new password
 		fmt.Println("\nSet a password for v2 vault access.")
-		password, err := crypto.PromptPassphraseConfirm()
+		password, err := crypto.PromptNewPassphrase()
 		if err != nil {
 			return err
 		}

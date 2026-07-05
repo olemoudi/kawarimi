@@ -203,6 +203,16 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .btn-row .spacer { flex: 1; }
 
 .error { color: var(--alarm); font-size: 13px; margin-top: 10px; min-height: 18px; }
+
+/* password strength meter */
+.smeter { margin-top: 7px; }
+.smeter-track { height: 5px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.smeter-fill { height: 100%; width: 0; background: var(--alarm); border-radius: 3px; transition: width 0.2s, background 0.2s; }
+.smeter-fill[data-level="2"] { background: var(--amber); }
+.smeter-fill[data-level="3"], .smeter-fill[data-level="4"] { background: var(--alive); }
+.smeter-label { font-size: 12.5px; color: var(--muted); margin-top: 5px; min-height: 16px; font-weight: 400; }
+.weak-row { font-weight: 400; color: var(--amber); display: flex; align-items: center; gap: 8px; }
+.weak-row input { width: auto; }
 .help {
   font-size: 13px; color: var(--muted); margin: 4px 0 14px;
   padding: 10px 13px; background: var(--panel-2);

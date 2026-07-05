@@ -214,6 +214,15 @@ stored params to brute-force a slot; combined with the header HMAC, tampered
 params also fail integrity. Key material is wiped throughout with
 `crypto.ZeroBytes`.
 
+**Password strength** ([`internal/crypto/strength.go`](internal/crypto/strength.go)):
+every prompt that sets a *new* vault-protecting password runs
+`EstimatePasswordStrength`, a zxcvbn-style lower-bound estimator (top-10k
+common passwords, English + Spanish + BIP39 dictionaries via
+[`tools/genstrengthwords`](tools/genstrengthwords/), l33t/sequence/repeat/date
+patterns) calibrated to the $100k/year attacker in
+[THREAT_MODEL.md](THREAT_MODEL.md) §3. Weak choices need explicit confirmation
+(CLI TTY prompt / GUI checkbox, enforced server-side in `/api/init`).
+
 ---
 
 ## 7. Dead man's switch engine
@@ -375,9 +384,9 @@ takes precedence and configured machines still get `--help`.
 **One shared code path.** The GUI does *not* re-implement setup. It calls the same
 `internal/setup` orchestration the CLI uses (`InitVault`, `StoreSwitchPayloadForMode`,
 `SeedSwitch`) plus `internal/vault`, `internal/deadswitch`, and `internal/github`.
-The JSON API (`/api/init`, `/api/switch/setup`, `/api/switch/cloud`,
-`/api/package/build`, `/api/entries…`, `/api/checkin`, `/api/switch/verify`) is a
-thin adapter over those functions.
+The JSON API (`/api/init`, `/api/password-strength`, `/api/switch/setup`,
+`/api/switch/cloud`, `/api/package/build`, `/api/entries…`, `/api/checkin`,
+`/api/switch/verify`) is a thin adapter over those functions.
 
 **Cloud automation (the one new capability).** Unlike the CLI's guided-manual flow,
 the GUI's cloud step uses a GitHub personal access token to *create* the private
@@ -504,9 +513,12 @@ Three kinds of migration keep an install current:
 
 ## 14. Threat model
 
-See [README.md §Threat model](README.md#threat-model-summary) for the
-attacker-scenario summary. At the code level, the following invariants are
-enforced by tests and should stay true across changes:
+The full threat model — adversary catalogue, the $100k/year cracking-budget
+math behind the KDF profiles and the password-strength meter, design-decision
+record, and accepted caveats — lives in [THREAT_MODEL.md](THREAT_MODEL.md).
+[README.md §Threat model](README.md#threat-model-summary) keeps the user-facing
+summary. At the code level, the following invariants are enforced by tests and
+should stay true across changes:
 
 - **DMS operator / cloud cannot decrypt** (`TestDMSOperatorCannotDecrypt`): the
   cloud only holds the DMS key, useless without the card.

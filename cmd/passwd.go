@@ -72,7 +72,7 @@ func passwdV2(cfg *config.Config) error {
 
 	// Prompt for new password
 	fmt.Println("Set a new password.")
-	newPassword, err := crypto.PromptPassphraseConfirm()
+	newPassword, err := crypto.PromptNewPassphrase()
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func passwdV1(cfg *config.Config) error {
 	}
 
 	fmt.Println("Set a new passphrase for the vault.")
-	newPassphrase, err := crypto.PromptPassphraseConfirm()
+	newPassphrase, err := crypto.PromptNewPassphrase()
 	if err != nil {
 		return err
 	}

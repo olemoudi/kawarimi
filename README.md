@@ -149,6 +149,9 @@ There are **two delivery channels**:
   alone opens nothing. Rotate with `kawarimi switch rekey` only if the key
   reached someone beyond your recipients.
 
+The full threat model — including the $100k/year cracking budget the password
+strength meter is calibrated against — is in [THREAT_MODEL.md](THREAT_MODEL.md).
+
 ## Operational constraints
 
 - The DMS repo must be a **separate, private, empty** GitHub repo (no README) so

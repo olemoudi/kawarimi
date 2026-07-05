@@ -181,7 +181,7 @@ var deviceAcceptCmd = &cobra.Command{
 
 		// Set password for this device
 		fmt.Println("\nSet a password for this device (can be different from other devices).")
-		password, err := crypto.PromptPassphraseConfirm()
+		password, err := crypto.PromptNewPassphrase()
 		if err != nil {
 			return err
 		}

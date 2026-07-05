@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,69 @@ func TestUnlockEndpoint(t *testing.T) {
 	}
 	if rec := call(h, "GET", "/api/unlock", nil); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET unlock: got %d, want 405", rec.Code)
+	}
+}
+
+// TestPasswordStrengthEndpoint exercises the live-meter scoring endpoint.
+func TestPasswordStrengthEndpoint(t *testing.T) {
+	testenv.SetHome(t, t.TempDir())
+	h := lockedServer().routes()
+
+	rec := call(h, "POST", "/api/password-strength", map[string]string{"password": "password"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("strength: got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var weak struct {
+		Level    int     `json:"level"`
+		LevelKey string  `json:"levelKey"`
+		Bits     float64 `json:"bits"`
+		Warning  string  `json:"warning"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &weak); err != nil {
+		t.Fatal(err)
+	}
+	if weak.Level != 0 || weak.LevelKey != "very_weak" || weak.Warning != "common_password" {
+		t.Errorf("'password' must score very_weak/common_password, got %+v", weak)
+	}
+
+	rec = call(h, "POST", "/api/password-strength", map[string]string{"password": "kX9$mQ2#vL5!pR8&"})
+	var strong struct {
+		Level int `json:"level"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &strong); err != nil {
+		t.Fatal(err)
+	}
+	if strong.Level != 4 {
+		t.Errorf("random 16-char must score excellent, got %d", strong.Level)
+	}
+
+	if rec := call(h, "GET", "/api/password-strength", nil); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET strength: got %d, want 405", rec.Code)
+	}
+}
+
+// TestInitWeakPasswordGate: the server refuses a weak vault password unless the
+// client sends the explicit acceptWeak override (the SPA's checkbox).
+func TestInitWeakPasswordGate(t *testing.T) {
+	home := testenv.SetHome(t, t.TempDir())
+	h := lockedServer().routes()
+
+	rec := call(h, "POST", "/api/init", map[string]any{
+		"password": "password", "vaultDir": filepath.Join(home, "vault"),
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("weak password without override: got %d, want 400", rec.Code)
+	}
+	if body := rec.Body.String(); !json.Valid([]byte(body)) || !strings.Contains(body, "weak_password") {
+		t.Errorf("weak-password rejection must carry the weak_password key, got %s", body)
+	}
+
+	// With the override the init proceeds end to end (production KDF, one slow call).
+	rec = call(h, "POST", "/api/init", map[string]any{
+		"password": "password", "vaultDir": filepath.Join(home, "vault"), "acceptWeak": true,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("weak password with override: got %d (%s)", rec.Code, rec.Body.String())
 	}
 }
 

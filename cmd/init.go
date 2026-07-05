@@ -38,7 +38,7 @@ var initCmd = &cobra.Command{
 		}
 
 		fmt.Println("Set a password for daily vault access.")
-		password, err := crypto.PromptPassphraseConfirm()
+		password, err := crypto.PromptNewPassphrase()
 		if err != nil {
 			return err
 		}

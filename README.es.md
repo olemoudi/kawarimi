@@ -161,6 +161,10 @@ Hay **dos canales de entrega**:
   la clave por sí sola no abre nada. Rota con `kawarimi switch rekey` solo si
   la clave llegó a alguien más.
 
+El modelo de amenazas completo — incluido el presupuesto de 100.000 $/año
+contra el que está calibrado el medidor de fortaleza de contraseñas — está en
+[THREAT_MODEL.md](THREAT_MODEL.md) (en inglés).
+
 ## Restricciones operativas
 
 - El repositorio del interruptor debe ser un repositorio de GitHub **separado,

@@ -35,6 +35,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("/api/update/apply", s.requireSession(s.handleUpdateApply))
 
 	// Setup wizard
+	mux.HandleFunc("/api/password-strength", s.requireSession(s.handlePasswordStrength))
 	mux.HandleFunc("/api/init", s.requireSession(s.handleInit))
 	mux.HandleFunc("/api/switch/setup", s.requireSession(s.handleSwitchSetup))
 	mux.HandleFunc("/api/switch/cloud", s.requireSession(s.handleSwitchCloud))

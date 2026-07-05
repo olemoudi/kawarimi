@@ -141,6 +141,13 @@ const I18N = {
     wCreateBtn: "Create vault",
     errPwShort: "Use at least 8 characters.",
     errPwMismatch: "Passwords do not match.",
+    errPwWeak: "This password is too weak — pick a stronger one, or tick the box to use it anyway.",
+    strength0: "very weak", strength1: "weak", strength2: "fair", strength3: "strong", strength4: "excellent",
+    strengthLine: "{0} — a $100k/year attacker would crack it in {1}",
+    wPwWeakChk: "Use this weak password anyway (not recommended)",
+    durLtHour: "under an hour", durHours: "about {0} hours", durDays: "about {0} days",
+    durMonths: "about {0} months", durYears: "about {0} years", durKYears: "about {0} thousand years",
+    durMYears: "about {0} million years", durBYears: "over a billion years",
 
     wSecretsTitle: "Write these down now",
     wSecretsSub: "These are shown only once. Store them safely and do not reload this page until you have saved them.",
@@ -307,6 +314,13 @@ const I18N = {
     wCreateBtn: "Crear caja fuerte",
     errPwShort: "Usa al menos 8 caracteres.",
     errPwMismatch: "Las contraseñas no coinciden.",
+    errPwWeak: "Esta contraseña es demasiado débil — elige una más fuerte, o marca la casilla para usarla de todos modos.",
+    strength0: "muy débil", strength1: "débil", strength2: "aceptable", strength3: "fuerte", strength4: "excelente",
+    strengthLine: "{0} — un atacante con 100k $/año la rompería en {1}",
+    wPwWeakChk: "Usar esta contraseña débil de todos modos (no recomendado)",
+    durLtHour: "menos de una hora", durHours: "unas {0} horas", durDays: "unos {0} días",
+    durMonths: "unos {0} meses", durYears: "unos {0} años", durKYears: "unos {0} miles de años",
+    durMYears: "unos {0} millones de años", durBYears: "más de mil millones de años",
 
     wSecretsTitle: "Apunta esto ahora",
     wSecretsSub: "Se muestran una sola vez. Guárdalos en un lugar seguro y no recargues esta página hasta haberlos guardado.",
@@ -835,6 +849,54 @@ function wizProgress() {
 
 function wizGoto(step) { wiz.step = step; viewWizard(); }
 
+// ---- password strength meter ----------------------------------------------------
+
+// fmtCrackYears renders an expected crack time (in years) as a rough localized
+// duration, mirroring crypto.FormatCrackTime.
+function fmtCrackYears(y) {
+  if (y < 1 / 8766) return t("durLtHour");
+  if (y < 2 / 365) return fmt(t("durHours"), Math.round(y * 8766));
+  if (y < 2 / 12) return fmt(t("durDays"), Math.round(y * 365.25));
+  if (y < 2) return fmt(t("durMonths"), Math.round(y * 12));
+  if (y < 1000) return fmt(t("durYears"), Math.round(y));
+  if (y < 1e6) return fmt(t("durKYears"), Math.round(y / 1e3));
+  if (y < 1e9) return fmt(t("durMYears"), Math.round(y / 1e6));
+  return t("durBYears");
+}
+
+// strengthMeter builds a live meter under a new-password input. Scores come from
+// the backend estimator (one source of truth with the CLI); meter.level holds the
+// latest level (null while empty) and meter.onscore fires after each update.
+function strengthMeter(pwInput) {
+  const fill = h("div", { class: "smeter-fill" });
+  const label = h("div", { class: "smeter-label" });
+  const box = h("div", { class: "smeter" }, h("div", { class: "smeter-track" }, fill), label);
+  box.level = null;
+  let timer = null;
+  pwInput.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (!pwInput.value) {
+        box.level = null;
+        fill.style.width = "0";
+        label.textContent = "";
+        if (box.onscore) box.onscore();
+        return;
+      }
+      try {
+        const s = await api("/api/password-strength", { method: "POST", body: { password: pwInput.value } });
+        if (!pwInput.value) return; // field cleared while the request was in flight
+        box.level = s.level;
+        fill.style.width = ((s.level + 1) * 20) + "%";
+        fill.dataset.level = String(s.level);
+        label.textContent = fmt(t("strengthLine"), t("strength" + s.level), fmtCrackYears(s.crackYears));
+        if (box.onscore) box.onscore();
+      } catch (_) { /* the meter is advisory — never block typing on an error */ }
+    }, 150);
+  });
+  return box;
+}
+
 // Step 1: create the vault.
 function wizCreate() {
   const err = h("div", { class: "error" });
@@ -842,6 +904,15 @@ function wizCreate() {
   const pw2 = h("input", { type: "password", id: "wpw2", placeholder: t("wPw2Ph") });
   const dir = h("input", { type: "text", id: "wdir", placeholder: t("wFolderPh") });
   const btn = h("button", { class: "btn", type: "submit" }, t("wCreateBtn"));
+  const meter = strengthMeter(pw);
+  const weakChk = h("input", { type: "checkbox", id: "wweak" });
+  const weakRow = h("label", { class: "weak-row" }, weakChk, " ", t("wPwWeakChk"));
+  weakRow.style.display = "none";
+  const isWeak = () => meter.level !== null && meter.level < 2;
+  meter.onscore = () => {
+    weakRow.style.display = isWeak() ? "" : "none";
+    if (!isWeak()) weakChk.checked = false;
+  };
 
   const form = h("form", {
     onsubmit: async (e) => {
@@ -849,18 +920,29 @@ function wizCreate() {
       err.textContent = "";
       if (pw.value.length < 8) { err.textContent = t("errPwShort"); return; }
       if (pw.value !== pw2.value) { err.textContent = t("errPwMismatch"); return; }
+      if (isWeak() && !weakChk.checked) { err.textContent = t("errPwWeak"); return; }
       btn.disabled = true;
       try {
-        wiz.secrets = await api("/api/init", { method: "POST", body: { password: pw.value, vaultDir: dir.value.trim() } });
+        wiz.secrets = await api("/api/init", {
+          method: "POST",
+          body: { password: pw.value, vaultDir: dir.value.trim(), acceptWeak: weakChk.checked }
+        });
         wizGoto(1);
-      } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+      } catch (ex) {
+        // The server enforces the same gate; if the meter had not scored yet,
+        // surface the override instead of a raw error key.
+        if (ex.message === "weak_password") { err.textContent = t("errPwWeak"); weakRow.style.display = ""; }
+        else err.textContent = ex.message;
+        btn.disabled = false;
+      }
     }
   },
     h("h1", null, t("wCreateTitle")),
     h("p", { class: "sub" }, t("wCreateSub")),
-    h("label", null, t("password")), pw,
+    h("label", null, t("password")), pw, meter,
     h("label", null, t("wConfirmPw")), pw2,
     h("label", null, t("wFolder"), " ", h("span", { class: "hint" }, t("wOptional"))), dir,
+    weakRow,
     err,
     h("div", { class: "btn-row" }, btn)
   );
