@@ -657,6 +657,8 @@ func (w *World) Snapshot() (*Snapshot, error) {
 }
 
 func (s *sandbox) snapshot() (*Snapshot, error) {
+	// Every list field marshals as a JSON array, never null — the SPA iterates
+	// them without per-field guards.
 	snap := &Snapshot{
 		Day:            s.day,
 		Engine:         s.engine,
@@ -672,11 +674,13 @@ func (s *sandbox) snapshot() (*Snapshot, error) {
 		},
 		Cloud: CloudPanel{
 			Repo: "demo/kawarimi-dms-demo",
-			Cron: append([]CronRun(nil), s.cron...),
+			Cron: append([]CronRun{}, s.cron...),
 		},
-		Phone:     append([]PhonePing(nil), s.phone...),
-		Recipient: s.recipient,
-		Events:    append([]Event(nil), s.events...),
+		Phone:          append([]PhonePing{}, s.phone...),
+		Recipient:      s.recipient,
+		Events:         append([]Event{}, s.events...),
+		OwnerInbox:     []MailView{},
+		RecipientInbox: []MailView{},
 	}
 	if s.released {
 		snap.KeyB64 = s.ghSecrets["DMS_KEY"]

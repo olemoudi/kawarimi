@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,6 +56,15 @@ func TestDemoLifecycleClickThrough(t *testing.T) {
 	snap := demoCall(t, h, "GET", "/api/demo/state", nil)
 	if snap.Day != 0 || snap.KeyB64 != "" || snap.CardWords == "" {
 		t.Fatalf("fresh demo snapshot: day=%d key=%q card=%q", snap.Day, snap.KeyB64, snap.CardWords)
+	}
+
+	// API contract: list fields are JSON arrays even when empty, never null —
+	// the SPA iterates them and a null crashed the very first page load once.
+	raw := call(h, "GET", "/api/demo/state", nil).Body.String()
+	for _, field := range []string{"phone", "events", "ownerInbox", "recipientInbox", "cron"} {
+		if strings.Contains(raw, `"`+field+`":null`) {
+			t.Errorf("fresh snapshot marshals %q as null; must be an empty array:\n%s", field, raw)
+		}
 	}
 
 	// Quiet days, then a warning.

@@ -865,9 +865,10 @@ function demoControls(d) {
 }
 
 function demoOwnerColumn(d) {
+  const pings = d.phone || [];
   const phone = h("div", { class: "phone-feed" },
-    d.phone.length === 0 ? h("p", { class: "muted-note" }, t("demoPhoneEmpty")) :
-      d.phone.slice(-6).map((p) =>
+    pings.length === 0 ? h("p", { class: "muted-note" }, t("demoPhoneEmpty")) :
+      pings.slice(-6).map((p) =>
         h("div", { class: "phone-msg" }, h("span", { class: "day-chip" }, fmt(t("demoDay"), p.day) + " "), p.text)));
 
   return demoColumn(t("demoColOwner"),
