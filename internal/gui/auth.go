@@ -48,6 +48,16 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("PUT /api/entries/{id}", s.requireSession(s.handleEntryUpdate))
 	mux.HandleFunc("DELETE /api/entries/{id}", s.requireSession(s.handleEntryDelete))
 
+	// Demo mode (only when launched via `kawarimi demo`)
+	if s.opts.Demo != nil {
+		mux.HandleFunc("GET /api/demo/state", s.requireSession(s.handleDemoState))
+		mux.HandleFunc("POST /api/demo/advance", s.requireSession(s.handleDemoAdvance))
+		mux.HandleFunc("POST /api/demo/checkin", s.requireSession(s.handleDemoCheckin))
+		mux.HandleFunc("POST /api/demo/telegram-alive", s.requireSession(s.handleDemoTelegramAlive))
+		mux.HandleFunc("POST /api/demo/recipient-open", s.requireSession(s.handleDemoRecipientOpen))
+		mux.HandleFunc("POST /api/demo/reset", s.requireSession(s.handleDemoReset))
+	}
+
 	return s.withSecurity(mux)
 }
 

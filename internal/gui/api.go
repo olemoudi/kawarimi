@@ -54,6 +54,8 @@ type stateResponse struct {
 	Warning1Days int `json:"warning1Days"`
 	Warning2Days int `json:"warning2Days"`
 	FinalDays    int `json:"finalDays"`
+	// DemoMode is true when this server is the `kawarimi demo` sandbox theater.
+	DemoMode bool `json:"demoMode"`
 }
 
 // buildState gathers the current state for the SPA (wizard vs unlock vs dashboard).
@@ -91,6 +93,7 @@ func (s *server) buildState() stateResponse {
 
 	resp.Unlocked = s.sess.isUnlocked()
 	resp.EntryCount = s.sess.vaultEntryCount()
+	resp.DemoMode = s.opts.Demo != nil
 	return resp
 }
 

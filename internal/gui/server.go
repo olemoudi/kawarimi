@@ -18,6 +18,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/olemoudi/kawarimi/internal/demo"
 )
 
 // idleTimeout stops the server after this long with no request. The SPA sends a
@@ -31,6 +33,10 @@ type Options struct {
 	NoBrowser bool   // do not auto-open the browser
 	Version   string // stamped build version, shown in the UI and used for packaging
 	SourceDir string // kawarimi source checkout for package cross-compile ("" = auto)
+	// Demo, when non-nil, serves the sandboxed lifecycle theater: the /api/demo/*
+	// endpoints are registered and the session auto-unlocks against the sandbox
+	// vault (`kawarimi demo` repointed HOME before starting this server).
+	Demo *demo.World
 }
 
 type server struct {
@@ -92,6 +98,15 @@ func newGUIServer(opts Options) (*server, net.Listener, string, error) {
 		quit:     make(chan struct{}),
 	}
 	s.httpSrv = &http.Server{Handler: s.routes()}
+
+	// Demo mode: the user never types the sandbox password — unlock now so the
+	// dashboard/entries views work against the sandbox vault immediately.
+	if opts.Demo != nil {
+		if err := s.sess.unlock(opts.Demo.Password()); err != nil {
+			ln.Close()
+			return nil, nil, "", fmt.Errorf("unlocking demo sandbox: %w", err)
+		}
+	}
 
 	return s, ln, fmt.Sprintf("http://%s/?t=%s", s.addr, token), nil
 }
