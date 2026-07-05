@@ -349,9 +349,16 @@ locally generated keypair ([`x25519.go`](internal/deadswitch/x25519.go)).
 `kawarimi package build` ([`cmd/package.go`](cmd/package.go),
 [`internal/vault/package.go`](internal/vault/package.go)):
 
-- **auto cross-compiles** recipient binaries for `linux/amd64`, `linux/arm64`,
-  `darwin/amd64`, `darwin/arm64`, `windows/amd64` (`CGO_ENABLED=0`) via a
-  `go build` subprocess (kept in sync with the Makefile `PLATFORMS`);
+- **prefers the official published release binaries**: it downloads all five
+  platform assets of the latest (non-draft, non-prerelease) GitHub release and
+  verifies each against the Ed25519-signed `checksums.txt` before packaging
+  (`selfupdate.FetchOfficialBinaries` — all-or-nothing), so recipients get the
+  exact released artifacts (and any OS code signatures they carry; see
+  [docs/code-signing.md](docs/code-signing.md));
+- **falls back to cross-compiling locally** (with a loud unsigned-binaries
+  warning) for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`,
+  `windows/amd64` (`CGO_ENABLED=0`) via a `go build` subprocess (kept in sync
+  with the Makefile `PLATFORMS`); an explicit `--source` forces the local build;
 - zips the **encrypted** vault (`vault_header.json`, `manifest.age`,
   `sealed_payload.age`, entry files — but **skips `last_checkin`**) plus the
   binaries plus a freshly injected bilingual `INSTRUCTIONS.md`;
@@ -539,6 +546,10 @@ Three kinds of migration keep an install current:
   Chromium via chromedp, gated on an installed browser; ubuntu runners have one)
   that fails on any uncaught exception or console.error across every view; only
   GitHub's scheduler is outside `go test`.
+- **Code signing**: the released binaries are not OS-signed (SmartScreen /
+  Gatekeeper warnings expected; the enablement runbook with costs, eligibility,
+  and the exact goreleaser/rcodesign integration points is
+  [docs/code-signing.md](docs/code-signing.md)).
 - **Releases** ([`.github/workflows/release.yml`](.github/workflows/release.yml)):
   pushing a `v*` tag runs goreleaser and publishes a **draft** GitHub release
   with the five per-platform binaries + `checksums.txt` (raw binaries, so the

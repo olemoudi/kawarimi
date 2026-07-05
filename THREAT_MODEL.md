@@ -235,6 +235,16 @@ Known limitations, deliberately accepted — with the reasoning:
 10. **Physical-world failure modes** — a lost/destroyed card, a recipient who
     predeceases the owner, an estate dispute — are handled operationally
     (`switch rekey`, reprint, re-package), not cryptographically.
+11. **Binaries are not OS code-signed** (no Authenticode, no notarization):
+    Windows SmartScreen and macOS Gatekeeper warn or block first runs, and users
+    are taught to bypass the warning — a real cost, deliberately accepted for
+    now (costs/eligibility in [docs/code-signing.md](docs/code-signing.md), with
+    the turnkey enablement paths). Mitigations: bilingual bypass guidance
+    everywhere recipients look, and `package build` ships the official
+    Ed25519-verified release binaries (`selfupdate.FetchOfficialBinaries`) so
+    recipients get the exact published artifacts — and automatically the signed
+    ones the day releases are signed. Kawarimi's own Ed25519 chain protects
+    authenticity within kawarimi; it is invisible to the OS.
 
 ## 8. Test anchors
 
@@ -259,4 +269,5 @@ is incomplete.
 | Secrets stored in GitHub / a new external service | §1, §4, §7 |
 | A new network-facing surface (GUI endpoint, channel) | §4, §6 |
 | Demo mode / the simenv actors | §6.11 |
+| Code signing / release distribution | §7.11 + docs/code-signing.md |
 | A security invariant test | §8 |

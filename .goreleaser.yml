@@ -56,8 +56,10 @@ release:
     | Linux | `kawarimi-linux-amd64` / `kawarimi-linux-arm64` |
 
     The binaries are unsigned: on **Windows**, if SmartScreen warns, choose
-    *More info → Run anyway*; on **macOS**, right-click → *Open* (or System
-    Settings → Privacy & Security → *Open Anyway*). En **Windows**, si aparece
-    SmartScreen elige *Más información → Ejecutar de todas formas*; en **macOS**,
-    clic derecho → *Abrir* (o Ajustes del Sistema → Privacidad y seguridad →
-    *Abrir de todas formas*). See the [README](https://github.com/olemoudi/kawarimi#readme).
+    *More info → Run anyway*; on **macOS**, open System Settings → Privacy &
+    Security → *Open Anyway*, then run it again (older Macs: right-click →
+    *Open*). En **Windows**, si aparece SmartScreen elige *Más información →
+    Ejecutar de todas formas*; en **macOS**, abre Ajustes del Sistema →
+    Privacidad y seguridad → *Abrir de todas formas* y vuelve a ejecutarlo
+    (Macs antiguos: clic derecho → *Abrir*). See the
+    [README](https://github.com/olemoudi/kawarimi#readme).
