@@ -258,8 +258,11 @@ impossible to reintroduce). The workflow:
   heartbeat is missing/unparseable it emails the OWNER ("DEAD MAN'S SWITCH IS
   NOT ARMED") and **never releases**;
 - emails the **DMS key** + `VAULT_PACKAGE_LOCATION` to `RECIPIENT_EMAILS` only
-  when `status==ok && days_since >= FinalDays` (bilingual body from
-  `copytext.ReleaseEmailBody`).
+  when `status==ok && days_since >= FinalDays`. The bilingual body is generated
+  from `copytext.ReleaseEmailBodyWorkflow()` — the same canonical text as the
+  local release path (`ReleaseEmailBody`), accent-stripped for the bash heredoc,
+  so the two emails cannot drift; it explains the physical card **before** the
+  steps. Changing the email/workflow text bumps `DMSWorkflowVersion` (v3).
 
 Everything sensitive lives in GitHub repo **secrets** (`SMTP_*`, `USER_EMAIL`,
 `RECIPIENT_EMAILS`, `DMS_KEY`, `VAULT_PACKAGE_LOCATION`, optional `TELEGRAM_*`),
@@ -354,10 +357,20 @@ locally generated keypair ([`x25519.go`](internal/deadswitch/x25519.go)).
 
 The recipient runs the bundled binary (auto-wizard, or `./kawarimi-<os> open`).
 The wizard ([`internal/recipient/recipient.go`](internal/recipient/recipient.go))
-chooses a language (Spanish default), locates the vault, prompts for the **KEY**
+chooses a language (Spanish default), locates the vault — an extracted `vault/`
+dir, the dir itself, or a **not-yet-extracted package zip** (content-verified via
+`vault.FindPackageZip`, which only matches zips whose central directory lists
+`vault/sealed_payload.age`; the bare-`kawarimi` recipient auto-launch in
+`cmd/root.go` uses the same detector, so a double-click next to the downloaded
+zip never falls into the owner setup wizard) — then prompts for the **KEY**
 (DMS key from email) and **WORDS** (passphrase from card), then
-`OpenSealedV4` → `Export("decrypted/")` → opens `decrypted/INDEX.md`. The
-non-wizard equivalent is `export --sealed`.
+`OpenSealedV4` → `Export("decrypted/")` → opens the `decrypted/` folder
+(INDEX.md inside, bilingual headers, no empty category dirs). Retry semantics
+favour a stressed non-technical user: a malformed key is re-prompted without
+spending one of the 5 attempts, Enter reuses the previously accepted key, the
+tries remaining are shown, and a `recover()` guard keeps a crash readable on
+Windows (the console pauses instead of vanishing). The non-wizard equivalent is
+`export --sealed`.
 
 ---
 
@@ -409,6 +422,11 @@ mode the local `dms-key` is deleted once the GitHub secret is set.
 - **Transient secrets** — the GitHub token lives only in memory for the cloud step;
   the mnemonic/recovery/recipient-passphrase are shown once and never logged; unlock
   still goes through the device-key owner slot. No new on-disk formats are introduced.
+- **Isolated printing** — printing is always per-secret-block (`print-solo` CSS
+  isolation, pinned by `printcard_test.go`): the recipient card prints as a
+  standalone bilingual wallet card carrying ONLY the recipient passphrase, so the
+  sheet handed to a recipient can never also carry the owner's mnemonic or
+  recovery code.
 - **Auto-shutdown** — a keepalive ping keeps the server alive while the tab is open;
   it exits on idle (deferred while any request is in flight, so a long package build
   is never killed mid-way), on `Quit`, or on Ctrl-C.

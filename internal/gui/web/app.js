@@ -157,7 +157,8 @@ const I18N = {
     wRecoverySub: "Regain access if you lose this device.",
     wCard: "Recipient passphrase",
     wCardSub: "Print this on a card and give it to your recipients. They will need it — and it alone opens nothing.",
-    print: "Print",
+    printBtn: "Print",
+    printCardBtn: "Print card",
     savedCheck: "I have saved these securely",
     wSecretsNext: "Continue to the dead man's switch",
 
@@ -330,7 +331,8 @@ const I18N = {
     wRecoverySub: "Para recuperar el acceso si pierdes este equipo.",
     wCard: "Frase del destinatario",
     wCardSub: "Imprímela en una tarjeta y dásela a tus destinatarios. La necesitarán — y por sí sola no abre nada.",
-    print: "Imprimir",
+    printBtn: "Imprimir",
+    printCardBtn: "Imprimir tarjeta",
     savedCheck: "He guardado todo en un lugar seguro",
     wSecretsNext: "Continuar con el interruptor",
 
@@ -963,25 +965,72 @@ function wizSecrets() {
     secretBlock(t("wMnemonic"), t("wMnemonicSub"),
       h("div", { class: "word-grid" },
         s.mnemonic.map((wd, i) => h("div", { class: "word" }, h("span", { class: "word-i" }, String(i + 1)), wd))),
-      s.mnemonic.join(" ")),
+      s.mnemonic.join(" "), t("printBtn"), printNode),
     secretBlock(t("wRecovery"), t("wRecoverySub"),
-      h("div", { class: "secret-val mono" }, s.recoveryCode), s.recoveryCode),
+      h("div", { class: "secret-val mono" }, s.recoveryCode), s.recoveryCode, t("printBtn"), printNode),
     secretBlock(t("wCard"), t("wCardSub"),
-      h("div", { class: "secret-val mono" }, s.recipientPassphrase), s.recipientPassphrase),
+      h("div", { class: "secret-val mono" }, s.recipientPassphrase), s.recipientPassphrase,
+      t("printCardBtn"), () => printCard(s.recipientPassphrase)),
     h("div", { class: "btn-row" },
-      h("button", { class: "btn btn-ghost", type: "button", onclick: () => window.print() }, t("print")),
       h("span", { class: "spacer" }),
       h("label", { class: "inline-check" }, saved, " " + t("savedCheck"))),
     h("div", { class: "btn-row" }, cont)
   );
 }
 
-function secretBlock(title, sub, valNode, copyText) {
-  return h("div", { class: "secret-box" },
-    h("div", { class: "secret-head" },
-      h("div", null, h("div", { class: "secret-title" }, title), h("div", { class: "muted" }, sub)),
-      h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: (e) => copy(copyText, e.target) }, t("copyBtn"))),
-    valNode);
+// secretBlock renders one secret with Copy and an isolated per-block Print — a
+// whole-page print would put the owner's mnemonic and the recipient's card on the
+// SAME sheet, which must never happen (the card is handed away).
+function secretBlock(title, sub, valNode, copyText, printLabel, printFn) {
+  const box = h("div", { class: "secret-box" });
+  box.appendChild(h("div", { class: "secret-head" },
+    h("div", null, h("div", { class: "secret-title" }, title), h("div", { class: "muted" }, sub)),
+    h("div", { class: "secret-actions" },
+      h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => printFn(box) }, printLabel),
+      h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: (e) => copy(copyText, e.target) }, t("copyBtn")))));
+  box.appendChild(valNode);
+  return box;
+}
+
+// printNode prints ONLY the given element: body gets print-solo, the element gets
+// print-target, and the print CSS hides everything else. Cleanup is idempotent and
+// runs on afterprint plus a timer fallback (Safari's afterprint is unreliable).
+function printNode(node) {
+  document.body.classList.add("print-solo");
+  node.classList.add("print-target");
+  const cleanup = () => {
+    document.body.classList.remove("print-solo");
+    node.classList.remove("print-target");
+    window.removeEventListener("afterprint", cleanup);
+  };
+  window.addEventListener("afterprint", cleanup);
+  setTimeout(cleanup, 2000);
+  window.print();
+}
+
+// printCard prints the recipient card as a standalone, wallet-sized artifact. The
+// text is hardcoded bilingual — the card travels to a recipient whose language the
+// owner's UI setting cannot know — and it explains itself: what it is, that an
+// email with a KEY will arrive one day, and that neither alone opens anything.
+// It contains ONLY the recipient passphrase, never the mnemonic or recovery code.
+function printCard(passphrase) {
+  let card = document.getElementById("printCard");
+  if (!card) {
+    card = h("div", { class: "print-card", id: "printCard" },
+      h("div", { class: "pc-title" }, "kawarimi — tarjeta de acceso / access card"),
+      h("div", { class: "pc-words" }, passphrase),
+      h("p", { class: "pc-text" },
+        "Guarda esta tarjeta en un lugar seguro. Un día recibirás un correo con una CLAVE. " +
+        "Hacen falta la tarjeta Y esa clave juntas — por separado no abren nada."),
+      h("p", { class: "pc-text" },
+        "Keep this card safe. One day an email will bring you a KEY. " +
+        "You need this card AND that key together — neither opens anything alone."),
+      h("div", { class: "pc-from" }, "De / From: ______________________"));
+    document.body.appendChild(card);
+  } else {
+    card.querySelector(".pc-words").textContent = passphrase;
+  }
+  printNode(card);
 }
 
 function copy(text, btn) {

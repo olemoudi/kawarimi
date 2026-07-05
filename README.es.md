@@ -62,7 +62,9 @@ configuración** en tu navegador (español/inglés) y te guía por todo:
    del interruptor y configura sus secretos por ti.
 5. Genera el paquete para los destinatarios (un zip con la caja fuerte cifrada
    y los programas para cada plataforma) y súbelo a un lugar accesible.
-6. Entrega a cada destinatario su tarjeta impresa. Después solo tienes que dar
+6. Entrega a cada destinatario su tarjeta impresa — el botón **Imprimir tarjeta**
+   del asistente imprime una tarjeta bilingüe lista para recortar que se explica
+   sola (y solo contiene la frase del destinatario). Después solo tienes que dar
    señales de vida desde el panel (o `kawarimi checkin`) según tu calendario.
 
 ¿Prefieres la terminal? El mismo flujo existe como comandos:

@@ -178,8 +178,13 @@ Decisions that exist *because of* this threat model, with their rationale:
 8. **Loopback GUI hardening** (token cookie, Host/Origin checks, CSP): the GUI
    handles the same secrets as the CLI, so it gets a real server-side security
    model even though it only binds 127.0.0.1.
-9. **Atomic writes + self-healing header backups.** Durability is a security
-   property here: a bricked header equals losing the estate.
+9. **The printed recipient card carries only the recipient passphrase.** GUI
+   printing is per-secret-block with CSS isolation (no whole-page print exists),
+   and the card is a dedicated bilingual artifact — so the sheet the owner hands
+   to a recipient can never also carry the mnemonic or recovery code. Pinned by
+   `internal/gui/printcard_test.go`.
+10. **Atomic writes + self-healing header backups.** Durability is a security
+    property here: a bricked header equals losing the estate.
 
 ## 7. Caveats and accepted risks
 

@@ -58,7 +58,9 @@ wizard** in your browser (Spanish/English) and walks you through everything:
    repository and sets its secrets for you.
 5. Build the recipient package (a zip with the encrypted vault and the programs
    for every platform) and upload it somewhere your recipients can reach.
-6. Give each recipient the printed card. Then just check in from the dashboard
+6. Give each recipient the printed card — the wizard's **Print card** button
+   prints a ready-to-cut bilingual card that explains itself (and contains only
+   the recipient passphrase). Then just check in from the dashboard
    (or `kawarimi checkin`) on your schedule.
 
 Prefer a terminal? The same flow exists as CLI commands:

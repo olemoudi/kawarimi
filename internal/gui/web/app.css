@@ -412,4 +412,29 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 @media print {
   .topbar, .navbar, .wizard-steps, .btn-row, .toast { display: none !important; }
   .card { box-shadow: none; border: none; }
+
+  /* Per-block printing: with body.print-solo, ONLY the .print-target subtree is
+     visible. A whole-page print would put the owner's mnemonic and the handed-away
+     recipient card on the same sheet — the isolation below is what prevents it. */
+  body.print-solo * { visibility: hidden; }
+  body.print-solo .print-target, body.print-solo .print-target * { visibility: visible; }
+  body.print-solo .print-target { position: absolute; left: 0; top: 0; width: 100%; }
+  body.print-solo .print-card.print-target { display: block; width: 86mm; }
 }
+
+/* The standalone recipient card (built by printCard); hidden on screen. */
+.print-card { display: none; }
+.print-card .pc-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+.print-card .pc-words {
+  font-family: var(--mono); font-size: 15px; font-weight: 600;
+  border: 1.5px solid #000; border-radius: 4px; padding: 8px 10px; margin: 6px 0 8px;
+}
+.print-card .pc-text { font-size: 10.5px; margin: 4px 0; }
+.print-card .pc-from { font-size: 11px; margin-top: 10px; }
+@media print {
+  body.print-solo .print-card {
+    padding: 6mm; border: 1.5px dashed #000; border-radius: 3mm; color: #000;
+  }
+}
+
+.secret-actions { display: flex; gap: 8px; }
